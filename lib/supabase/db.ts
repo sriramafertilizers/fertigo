@@ -1,4 +1,4 @@
-import { Shop, Category, Product, ProductVariant, ProductWithVariants, User, PREDEFINED_CATEGORIES } from '../types';
+import { Shop, Category, Company, Product, ProductVariant, ProductWithVariants, User, PREDEFINED_CATEGORIES, Sale, SaleItem, SaleWithItems, CreateSaleInput, Customer, Farmer, KathaPayment, FarmerWithHistory } from '../types';
 import { supabase, isSupabaseConfigured } from './client';
 
 // ----------------------------------------------------
@@ -306,6 +306,114 @@ export async function createCategory(shopId: string, name: string): Promise<Cate
 }
 
 // ----------------------------------------------------
+// COMPANIES / MANUFACTURERS API
+// ----------------------------------------------------
+export async function getCompanies(shopId: string): Promise<Company[]> {
+  if (!shopId) return [];
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('shop_id', shopId)
+        .order('name');
+      if (!error && data) return data;
+    } catch {
+      // ignore
+    }
+  }
+  const companies = getLocalStore<Company[]>('companies', []);
+  return companies.filter((c) => c.shop_id === shopId);
+}
+
+export async function createCompany(
+  shopId: string,
+  companyData: Omit<Company, 'id' | 'shop_id' | 'created_at'>
+): Promise<Company> {
+  const cleanName = companyData.name.trim();
+  if (!cleanName) throw new Error('Company name is required');
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .insert({
+          shop_id: shopId,
+          name: cleanName,
+          contact_person: companyData.contact_person?.trim() || null,
+          phone: companyData.phone?.trim() || null,
+          account_number: companyData.account_number?.trim() || null,
+          bank_name: companyData.bank_name?.trim() || null,
+          ifsc_code: companyData.ifsc_code?.trim() || null,
+          gstin: companyData.gstin?.trim() || null,
+          address: companyData.address?.trim() || null,
+        })
+        .select()
+        .single();
+
+      if (!error && data) return data;
+    } catch {
+      // fallback
+    }
+  }
+
+  const companies = getLocalStore<Company[]>('companies', []);
+  const newCompany: Company = {
+    id: `comp-${Date.now()}`,
+    shop_id: shopId,
+    name: cleanName,
+    contact_person: companyData.contact_person?.trim() || null,
+    phone: companyData.phone?.trim() || null,
+    account_number: companyData.account_number?.trim() || null,
+    bank_name: companyData.bank_name?.trim() || null,
+    ifsc_code: companyData.ifsc_code?.trim() || null,
+    gstin: companyData.gstin?.trim() || null,
+    address: companyData.address?.trim() || null,
+    created_at: new Date().toISOString(),
+  };
+
+  companies.push(newCompany);
+  setLocalStore('companies', companies);
+  return newCompany;
+}
+
+export async function updateCompany(company: Partial<Company> & { id: string }): Promise<Company> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .update(company)
+        .eq('id', company.id)
+        .select()
+        .single();
+      if (!error && data) return data;
+    } catch {
+      // ignore
+    }
+  }
+  const companies = getLocalStore<Company[]>('companies', []);
+  const idx = companies.findIndex((c) => c.id === company.id);
+  const updated = { ...companies[idx], ...company };
+  if (idx >= 0) companies[idx] = updated;
+  setLocalStore('companies', companies);
+  return updated as Company;
+}
+
+export async function deleteCompany(companyId: string): Promise<void> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase.from('companies').delete().eq('id', companyId);
+      return;
+    } catch {
+      // ignore
+    }
+  }
+  const companies = getLocalStore<Company[]>('companies', []);
+  const updatedCompanies = companies.filter((c) => c.id !== companyId);
+  setLocalStore('companies', updatedCompanies);
+}
+
+// ----------------------------------------------------
 // PRODUCTS & VARIANTS API
 // ----------------------------------------------------
 export async function getProducts(shopId: string): Promise<ProductWithVariants[]> {
@@ -320,7 +428,26 @@ export async function getProducts(shopId: string): Promise<ProductWithVariants[]
       `)
       .eq('shop_id', shopId)
       .order('created_at', { ascending: false });
-    if (!error && data) return data as ProductWithVariants[];
+
+    if (!error && data) {
+      try {
+        const { data: companyData } = await supabase
+          .from('companies')
+          .select('*')
+          .eq('shop_id', shopId);
+
+        const companyMap = new Map((companyData || []).map((c) => [c.id, c]));
+
+        const enriched = data.map((p: any) => ({
+          ...p,
+          company_obj: p.company_id ? companyMap.get(p.company_id) || null : null,
+        }));
+
+        return enriched as ProductWithVariants[];
+      } catch {
+        return data as ProductWithVariants[];
+      }
+    }
   }
   const prods = getLocalStore<ProductWithVariants[]>('products', []);
   return prods.filter((p) => p.shop_id === shopId);
@@ -338,7 +465,24 @@ export async function getProductById(id: string): Promise<ProductWithVariants | 
       `)
       .eq('id', id)
       .single();
-    if (!error && data) return data as ProductWithVariants;
+
+    if (!error && data) {
+      if (data.company_id) {
+        try {
+          const { data: comp } = await supabase
+            .from('companies')
+            .select('*')
+            .eq('id', data.company_id)
+            .single();
+          if (comp) {
+            (data as any).company_obj = comp;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      return data as ProductWithVariants;
+    }
   }
   const prods = getLocalStore<ProductWithVariants[]>('products', []);
   return prods.find((p) => p.id === id) || null;
@@ -348,6 +492,7 @@ export interface CreateProductInput {
   shop_id: string;
   name: string;
   company?: string | null;
+  company_id?: string | null;
   category_id?: string | null;
   variants: Array<{
     variant_name: string;
@@ -364,17 +509,33 @@ export async function createProduct(input: CreateProductInput): Promise<ProductW
   const productId = crypto.randomUUID();
 
   if (isSupabaseConfigured && supabase) {
-    const { data: prodData, error: prodErr } = await supabase
+    const insertPayload: any = {
+      id: productId,
+      shop_id: input.shop_id,
+      name: input.name.trim(),
+      company: input.company?.trim() || null,
+      category_id: input.category_id || null,
+    };
+    if (input.company_id) {
+      insertPayload.company_id = input.company_id;
+    }
+
+    let { data: prodData, error: prodErr } = await supabase
       .from('products')
-      .insert({
-        id: productId,
-        shop_id: input.shop_id,
-        name: input.name.trim(),
-        company: input.company?.trim() || null,
-        category_id: input.category_id || null,
-      })
+      .insert(insertPayload)
       .select()
       .single();
+
+    if (prodErr && prodErr.message.includes('company_id')) {
+      delete insertPayload.company_id;
+      const retry = await supabase
+        .from('products')
+        .insert(insertPayload)
+        .select()
+        .single();
+      prodData = retry.data;
+      prodErr = retry.error;
+    }
 
     if (prodErr) throw new Error(prodErr.message);
 
@@ -403,11 +564,16 @@ export async function createProduct(input: CreateProductInput): Promise<ProductW
   const cats = getLocalStore<Category[]>('categories', []);
   const cat = cats.find((c) => c.id === input.category_id) || null;
 
+  const comps = getLocalStore<Company[]>('companies', []);
+  const comp = comps.find((c) => c.id === input.company_id) || null;
+
   const newProd: ProductWithVariants = {
     id: productId,
     shop_id: input.shop_id,
     name: input.name.trim(),
-    company: input.company?.trim() || null,
+    company: input.company?.trim() || comp?.name || null,
+    company_id: input.company_id || null,
+    company_obj: comp,
     category_id: input.category_id || null,
     category: cat,
     created_at: new Date().toISOString(),
@@ -434,6 +600,7 @@ export interface UpdateProductInput {
   id: string;
   name: string;
   company?: string | null;
+  company_id?: string | null;
   category_id?: string | null;
   variants: Array<{
     id?: string;
@@ -449,14 +616,28 @@ export interface UpdateProductInput {
 
 export async function updateProduct(input: UpdateProductInput): Promise<ProductWithVariants> {
   if (isSupabaseConfigured && supabase) {
-    const { error: prodErr } = await supabase
+    const updatePayload: any = {
+      name: input.name.trim(),
+      company: input.company?.trim() || null,
+      category_id: input.category_id || null,
+    };
+    if (input.company_id) {
+      updatePayload.company_id = input.company_id;
+    }
+
+    let { error: prodErr } = await supabase
       .from('products')
-      .update({
-        name: input.name.trim(),
-        company: input.company?.trim() || null,
-        category_id: input.category_id || null,
-      })
+      .update(updatePayload)
       .eq('id', input.id);
+
+    if (prodErr && prodErr.message.includes('company_id')) {
+      delete updatePayload.company_id;
+      const retry = await supabase
+        .from('products')
+        .update(updatePayload)
+        .eq('id', input.id);
+      prodErr = retry.error;
+    }
 
     if (prodErr) throw new Error(prodErr.message);
 
@@ -486,6 +667,9 @@ export async function updateProduct(input: UpdateProductInput): Promise<ProductW
   const cats = getLocalStore<Category[]>('categories', []);
   const cat = cats.find((c) => c.id === input.category_id) || null;
 
+  const comps = getLocalStore<Company[]>('companies', []);
+  const comp = comps.find((c) => c.id === input.company_id) || null;
+
   const existingVariants = prods[idx].variants;
   const updatedVariants: ProductVariant[] = input.variants.map((v, i) => {
     const existing = v.id ? existingVariants.find((ev) => ev.id === v.id) : null;
@@ -505,7 +689,9 @@ export async function updateProduct(input: UpdateProductInput): Promise<ProductW
   prods[idx] = {
     ...prods[idx],
     name: input.name.trim(),
-    company: input.company?.trim() || null,
+    company: input.company?.trim() || comp?.name || null,
+    company_id: input.company_id || null,
+    company_obj: comp,
     category_id: input.category_id || null,
     category: cat,
     variants: updatedVariants,
@@ -539,3 +725,400 @@ export async function deleteVariant(variantId: string): Promise<void> {
   });
   setLocalStore('products', prods);
 }
+
+// ----------------------------------------------------
+// FARMER SALES & POS BILLING API (Real-Time Stock Deduction)
+// ----------------------------------------------------
+export async function createSale(input: CreateSaleInput): Promise<SaleWithItems> {
+  if (!input.shop_id) throw new Error('Shop ID is required.');
+  if (!input.customer_name.trim()) throw new Error('Farmer / Customer name is required.');
+  if (!input.items || input.items.length === 0) throw new Error('Sale must contain at least 1 item.');
+
+  const saleId = crypto.randomUUID();
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  const billNumber = `INV-${dateStr}-${randomSuffix}`;
+
+  const totalAmount = input.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+  const discount = input.discount_amount || 0;
+  const netAmount = Math.max(0, totalAmount - discount);
+  const paymentMode = input.payment_mode || 'CASH';
+
+  const saleRecord: Sale = {
+    id: saleId,
+    shop_id: input.shop_id,
+    bill_number: billNumber,
+    farmer_id: input.farmer_id || null,
+    customer_name: input.customer_name.trim(),
+    customer_mobile: input.customer_mobile?.trim() || null,
+    total_amount: totalAmount,
+    discount_amount: discount,
+    net_amount: netAmount,
+    payment_mode: paymentMode,
+    created_at: new Date().toISOString(),
+  };
+
+  const saleItems: SaleItem[] = input.items.map((item) => ({
+    id: crypto.randomUUID(),
+    sale_id: saleId,
+    product_id: item.product_id,
+    variant_id: item.variant_id,
+    product_name: item.product_name,
+    variant_name: item.variant_name,
+    quantity: item.quantity,
+    unit_price: item.unit_price,
+    total_price: item.quantity * item.unit_price,
+    created_at: new Date().toISOString(),
+  }));
+
+  // Perform Stock Deduction
+  if (isSupabaseConfigured && supabase) {
+    try {
+      // 1. Save Sale Header
+      const { error: saleErr } = await supabase.from('sales').insert({
+        id: saleRecord.id,
+        shop_id: saleRecord.shop_id,
+        bill_number: saleRecord.bill_number,
+        farmer_id: saleRecord.farmer_id || null,
+        customer_name: saleRecord.customer_name,
+        customer_mobile: saleRecord.customer_mobile,
+        total_amount: saleRecord.total_amount,
+        discount_amount: saleRecord.discount_amount,
+        net_amount: saleRecord.net_amount,
+        payment_mode: saleRecord.payment_mode,
+      });
+
+      if (!saleErr) {
+        // 2. Save Sale Line Items
+        const itemRows = saleItems.map((si) => ({
+          id: si.id,
+          sale_id: si.sale_id,
+          product_id: si.product_id,
+          variant_id: si.variant_id,
+          product_name: si.product_name,
+          variant_name: si.variant_name,
+          quantity: si.quantity,
+          unit_price: si.unit_price,
+          total_price: si.total_price,
+        }));
+        await supabase.from('sale_items').insert(itemRows);
+
+        // 3. Deduct Stock for each variant in Supabase
+        for (const item of input.items) {
+          const { data: vData } = await supabase
+            .from('product_variants')
+            .select('stock_quantity')
+            .eq('id', item.variant_id)
+            .single();
+
+          if (vData) {
+            const currentStock = Number(vData.stock_quantity || 0);
+            const newStock = Math.max(0, currentStock - item.quantity);
+            await supabase
+              .from('product_variants')
+              .update({ stock_quantity: newStock })
+              .eq('id', item.variant_id);
+          }
+        }
+
+        // 4. If Katha (CREDIT) and farmer linked — increase farmer's katha_balance
+        if (paymentMode === 'CREDIT' && saleRecord.farmer_id) {
+          const { data: farmerRow } = await supabase
+            .from('farmers')
+            .select('katha_balance')
+            .eq('id', saleRecord.farmer_id)
+            .single();
+
+          if (farmerRow) {
+            const newKatha = Number(farmerRow.katha_balance || 0) + netAmount;
+            await supabase
+              .from('farmers')
+              .update({ katha_balance: newKatha })
+              .eq('id', saleRecord.farmer_id);
+          }
+        }
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  // Always update Local Store as well for real-time synchronization
+  const sales = getLocalStore<Sale[]>('sales', []);
+  sales.unshift(saleRecord);
+  setLocalStore('sales', sales);
+
+  const allSaleItems = getLocalStore<SaleItem[]>('sale_items', []);
+  setLocalStore('sale_items', [...saleItems, ...allSaleItems]);
+
+  // Local Store Stock Deduction Fallback
+  const prods = getLocalStore<ProductWithVariants[]>('products', []);
+  input.items.forEach((item) => {
+    prods.forEach((p) => {
+      p.variants.forEach((v) => {
+        if (v.id === item.variant_id) {
+          const currentStock = Number(v.stock_quantity || 0);
+          v.stock_quantity = Math.max(0, currentStock - item.quantity);
+        }
+      });
+    });
+  });
+  setLocalStore('products', prods);
+
+  // Local Store Katha balance fallback for CREDIT sales
+  if (paymentMode === 'CREDIT' && saleRecord.farmer_id) {
+    const farmers = getLocalStore<Farmer[]>('farmers', []);
+    const fi = farmers.findIndex((f) => f.id === saleRecord.farmer_id);
+    if (fi >= 0) {
+      farmers[fi].katha_balance = Number(farmers[fi].katha_balance || 0) + netAmount;
+      setLocalStore('farmers', farmers);
+    }
+  }
+
+  return {
+    ...saleRecord,
+    items: saleItems,
+  };
+}
+
+export async function getSales(shopId: string): Promise<SaleWithItems[]> {
+  if (!shopId) return [];
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('sales')
+        .select(`
+          *,
+          items:sale_items(*)
+        `)
+        .eq('shop_id', shopId)
+        .order('created_at', { ascending: false });
+
+      if (!error && data) return data as SaleWithItems[];
+    } catch {
+      // fallback
+    }
+  }
+
+  const sales = getLocalStore<Sale[]>('sales', []);
+  const shopSales = sales.filter((s) => s.shop_id === shopId);
+
+  const allItems = getLocalStore<SaleItem[]>('sale_items', []);
+
+  return shopSales.map((s) => ({
+    ...s,
+    items: allItems.filter((i) => i.sale_id === s.id),
+  }));
+}
+
+// ----------------------------------------------------
+// FARMERS / CUSTOMER REGISTRY API
+// ----------------------------------------------------
+export async function getFarmers(shopId: string): Promise<Farmer[]> {
+  if (!shopId) return [];
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('farmers')
+        .select('*')
+        .eq('shop_id', shopId)
+        .order('name');
+      if (!error && data) return data as Farmer[];
+    } catch {
+      // fallback
+    }
+  }
+  const farmers = getLocalStore<Farmer[]>('farmers', []);
+  return farmers.filter((f) => f.shop_id === shopId).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getFarmerById(farmerId: string): Promise<FarmerWithHistory | null> {
+  if (!farmerId) return null;
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data: farmerData, error } = await supabase
+        .from('farmers')
+        .select('*')
+        .eq('id', farmerId)
+        .single();
+      if (error || !farmerData) return null;
+
+      const { data: salesData } = await supabase
+        .from('sales')
+        .select('*, items:sale_items(*)')
+        .eq('farmer_id', farmerId)
+        .order('created_at', { ascending: false });
+
+      const { data: kathaData } = await supabase
+        .from('katha_payments')
+        .select('*')
+        .eq('farmer_id', farmerId)
+        .order('created_at', { ascending: false });
+
+      return {
+        ...(farmerData as Farmer),
+        sales: (salesData as SaleWithItems[]) || [],
+        katha_payments: (kathaData as KathaPayment[]) || [],
+      };
+    } catch {
+      // fallback
+    }
+  }
+
+  // Local Store Fallback
+  const farmers = getLocalStore<Farmer[]>('farmers', []);
+  const farmer = farmers.find((f) => f.id === farmerId);
+  if (!farmer) return null;
+
+  const sales = getLocalStore<Sale[]>('sales', []);
+  const saleItems = getLocalStore<SaleItem[]>('sale_items', []);
+  const kathaPayments = getLocalStore<KathaPayment[]>('katha_payments', []);
+
+  const farmerSales = sales
+    .filter((s) => s.farmer_id === farmerId)
+    .map((s) => ({ ...s, items: saleItems.filter((i) => i.sale_id === s.id) }));
+
+  return {
+    ...farmer,
+    sales: farmerSales,
+    katha_payments: kathaPayments.filter((k) => k.farmer_id === farmerId),
+  };
+}
+
+export async function createFarmer(
+  shopId: string,
+  data: Omit<Farmer, 'id' | 'shop_id' | 'created_at' | 'katha_balance'>
+): Promise<Farmer> {
+  const cleanName = data.name.trim();
+  if (!cleanName) throw new Error('Farmer name is required');
+
+  const newFarmer: Farmer = {
+    id: crypto.randomUUID(),
+    shop_id: shopId,
+    name: cleanName,
+    mobile: data.mobile?.trim() || null,
+    aadhar_number: data.aadhar_number?.trim() || null,
+    village: data.village?.trim() || null,
+    land_acres: data.land_acres ?? null,
+    crop_types: data.crop_types?.length ? data.crop_types : null,
+    notes: data.notes?.trim() || null,
+    katha_balance: 0,
+    created_at: new Date().toISOString(),
+  };
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data: saved, error } = await supabase
+        .from('farmers')
+        .insert(newFarmer)
+        .select()
+        .single();
+      if (!error && saved) return saved as Farmer;
+    } catch {
+      // fallback
+    }
+  }
+
+  const farmers = getLocalStore<Farmer[]>('farmers', []);
+  farmers.push(newFarmer);
+  setLocalStore('farmers', farmers);
+  return newFarmer;
+}
+
+export async function updateFarmer(farmer: Partial<Farmer> & { id: string }): Promise<Farmer> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('farmers')
+        .update(farmer)
+        .eq('id', farmer.id)
+        .select()
+        .single();
+      if (!error && data) return data as Farmer;
+    } catch {
+      // fallback
+    }
+  }
+  const farmers = getLocalStore<Farmer[]>('farmers', []);
+  const idx = farmers.findIndex((f) => f.id === farmer.id);
+  const updated = { ...farmers[idx], ...farmer };
+  if (idx >= 0) farmers[idx] = updated;
+  setLocalStore('farmers', farmers);
+  return updated as Farmer;
+}
+
+export async function deleteFarmer(farmerId: string): Promise<void> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase.from('farmers').delete().eq('id', farmerId);
+      return;
+    } catch {
+      // fallback
+    }
+  }
+  const farmers = getLocalStore<Farmer[]>('farmers', []);
+  setLocalStore('farmers', farmers.filter((f) => f.id !== farmerId));
+}
+
+// Record a katha repayment — reduces farmer's katha_balance
+export async function recordKathaPayment(
+  shopId: string,
+  farmerId: string,
+  amount: number,
+  notes?: string
+): Promise<KathaPayment> {
+  if (amount <= 0) throw new Error('Payment amount must be greater than 0');
+
+  const payment: KathaPayment = {
+    id: crypto.randomUUID(),
+    shop_id: shopId,
+    farmer_id: farmerId,
+    amount,
+    notes: notes?.trim() || null,
+    created_at: new Date().toISOString(),
+  };
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data: saved, error } = await supabase
+        .from('katha_payments')
+        .insert(payment)
+        .select()
+        .single();
+
+      if (!error && saved) {
+        // Reduce katha_balance on the farmer row
+        const { data: farmerRow } = await supabase
+          .from('farmers')
+          .select('katha_balance')
+          .eq('id', farmerId)
+          .single();
+
+        if (farmerRow) {
+          const newBalance = Math.max(0, Number(farmerRow.katha_balance) - amount);
+          await supabase
+            .from('farmers')
+            .update({ katha_balance: newBalance })
+            .eq('id', farmerId);
+        }
+        return saved as KathaPayment;
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  // Local Store Fallback
+  const payments = getLocalStore<KathaPayment[]>('katha_payments', []);
+  payments.unshift(payment);
+  setLocalStore('katha_payments', payments);
+
+  const farmers = getLocalStore<Farmer[]>('farmers', []);
+  const idx = farmers.findIndex((f) => f.id === farmerId);
+  if (idx >= 0) {
+    farmers[idx].katha_balance = Math.max(0, Number(farmers[idx].katha_balance || 0) - amount);
+    setLocalStore('farmers', farmers);
+  }
+  return payment;
+}
+

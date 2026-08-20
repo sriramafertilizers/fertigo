@@ -12,6 +12,13 @@ export interface ExpiryStatus {
   formattedDate: string | null;
 }
 
+/**
+ * Agri Crop Cycle Expiry Rules:
+ * - EXPIRED: <= 0 days
+ * - CRITICAL: <= 180 days (<= 6 months - Must sell in current crop season!)
+ * - WARNING: <= 365 days (<= 12 months / 1 year - Prepare to clear before next crop cycle!)
+ * - GOOD: > 365 days (> 12 months)
+ */
 export function getExpiryStatus(expiryDateStr?: string | null): ExpiryStatus {
   if (!expiryDateStr) {
     return { status: 'NONE', label: 'No Expiry Set', daysLeft: null, formattedDate: null };
@@ -36,7 +43,7 @@ export function getExpiryStatus(expiryDateStr?: string | null): ExpiryStatus {
   if (daysLeft < 0) {
     return {
       status: 'EXPIRED',
-      label: `EXPIRED (${Math.abs(daysLeft)} days ago)`,
+      label: `EXPIRED (${Math.abs(daysLeft)}d ago)`,
       daysLeft,
       formattedDate,
     };
@@ -51,19 +58,23 @@ export function getExpiryStatus(expiryDateStr?: string | null): ExpiryStatus {
     };
   }
 
-  if (daysLeft <= 30) {
+  // <= 180 days (<= 6 months) -> Critical Crop Season warning
+  if (daysLeft <= 180) {
+    const monthsLeft = Math.ceil(daysLeft / 30);
     return {
       status: 'CRITICAL',
-      label: `Expires in ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}`,
+      label: `Critical: ${monthsLeft} ${monthsLeft === 1 ? 'month' : 'months'} left (${daysLeft}d)`,
       daysLeft,
       formattedDate,
     };
   }
 
-  if (daysLeft <= 90) {
+  // <= 365 days (<= 12 months / 1 year) -> Warning for next crop cycle
+  if (daysLeft <= 365) {
+    const monthsLeft = Math.ceil(daysLeft / 30);
     return {
       status: 'WARNING',
-      label: `Expires in ${daysLeft} days`,
+      label: `Warning: ${monthsLeft} months left (${daysLeft}d)`,
       daysLeft,
       formattedDate,
     };

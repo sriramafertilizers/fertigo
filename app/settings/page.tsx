@@ -54,7 +54,7 @@ export default function ShopSettingsPage() {
 
   const totalVariantsCount = products.reduce((acc, p) => acc + (p.variants?.length || 0), 0);
   const totalStockUnits = products.reduce(
-    (acc, p) => acc + p.variants.reduce((vAcc, v) => vAcc + Number(v.stock_quantity || 0), 0),
+    (acc, p) => acc + (p.variants || []).reduce((vAcc, v) => vAcc + Number(v.stock_quantity || 0), 0),
     0
   );
 

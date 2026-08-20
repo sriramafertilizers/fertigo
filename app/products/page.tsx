@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { getShop, getProducts, getCategories } from '@/lib/supabase/db';
-import { ProductWithVariants } from '@/lib/types';
+import { ProductWithVariants, ProductVariant } from '@/lib/types';
 import { DashRing } from '@/components/loading-ui/dash-ring';
 import { getExpiryStatus } from '@/lib/utils';
 import {
@@ -18,7 +18,7 @@ import {
   XCircle,
   AlertTriangle,
   Clock,
-  IndianRupee,
+  Calendar,
 } from 'lucide-react';
 
 export default function ProductsListPage() {
@@ -55,55 +55,46 @@ export default function ProductsListPage() {
     return matchesSearch && matchesCategory;
   });
 
-  const getPriceRange = (variants: ProductWithVariants['variants']) => {
-    if (!variants || variants.length === 0) return 'No variants';
-    const prices = variants.map((v) => Number(v.selling_price || 0));
-    const min = Math.min(...prices);
-    const max = Math.max(...prices);
-    if (min === max) return `₹${min.toFixed(2)}`;
-    return `₹${min.toFixed(2)} – ₹${max.toFixed(2)}`;
-  };
-
   const getTotalStock = (variants: ProductWithVariants['variants']) => {
     if (!variants || variants.length === 0) return 0;
     return variants.reduce((sum, v) => sum + Number(v.stock_quantity || 0), 0);
   };
 
-  const getProductExpiryBadge = (variants: ProductWithVariants['variants']) => {
-    if (!variants || variants.length === 0) return null;
-    const statuses = variants.map((v) => getExpiryStatus(v.expiry_date));
-
-    const expired = statuses.find((s) => s.status === 'EXPIRED');
-    if (expired) {
+  const renderExpiryBadge = (expiryDateStr?: string | null) => {
+    const expiry = getExpiryStatus(expiryDateStr);
+    if (expiry.status === 'NONE') {
+      return <span className="text-slate-400 text-xs font-normal">OK</span>;
+    }
+    if (expiry.status === 'EXPIRED') {
       return (
         <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">
           <AlertTriangle className="w-3 h-3 text-red-600" />
-          <span>Has Expired Variant</span>
+          <span>{expiry.label}</span>
         </span>
       );
     }
-
-    const critical = statuses.find((s) => s.status === 'CRITICAL');
-    if (critical) {
+    if (expiry.status === 'CRITICAL') {
       return (
         <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
           <Clock className="w-3 h-3 text-amber-700" />
-          <span>{critical.label}</span>
+          <span>{expiry.label}</span>
         </span>
       );
     }
-
-    const warning = statuses.find((s) => s.status === 'WARNING');
-    if (warning) {
+    if (expiry.status === 'WARNING') {
       return (
         <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
           <Clock className="w-3 h-3 text-amber-600" />
-          <span>{warning.label}</span>
+          <span>{expiry.label}</span>
         </span>
       );
     }
-
-    return null;
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+        <Calendar className="w-3 h-3 text-emerald-600" />
+        <span>{expiry.formattedDate}</span>
+      </span>
+    );
   };
 
   return (
@@ -209,97 +200,225 @@ export default function ProductsListPage() {
         </div>
       ) : (
         <>
-          {/* Desktop Table */}
-          <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold uppercase tracking-wider text-slate-600">
+          {/* Desktop Table: Single products show 1 clean row; Multi-variant products show merged rowspan layout */}
+          <div className="hidden md:block bg-white rounded-xl border border-slate-300 shadow-2xs overflow-hidden">
+            <table className="w-full text-left text-sm border-collapse">
+              <thead className="bg-slate-100 border-b border-slate-300 text-xs font-bold uppercase tracking-wider text-slate-700">
                 <tr>
-                  <th className="py-3 px-4">Product Name</th>
-                  <th className="py-3 px-4">Company</th>
-                  <th className="py-3 px-4">Category</th>
-                  <th className="py-3 px-4 text-center">Variants</th>
-                  <th className="py-3 px-4 text-right">Selling Price Range</th>
-                  <th className="py-3 px-4 text-right">Total Stock</th>
-                  <th className="py-3 px-4 text-center">Expiry Status</th>
+                  <th className="py-3 px-4 border-r border-slate-300 w-1/4">Product & Company</th>
+                  <th className="py-3 px-3 border-r border-slate-200 text-center w-12">#</th>
+                  <th className="py-3 px-4 border-r border-slate-200">Pack Size / Variant</th>
+                  <th className="py-3 px-4 border-r border-slate-200 text-right">Cost Price</th>
+                  <th className="py-3 px-4 border-r border-slate-200 text-right">Selling Price</th>
+                  <th className="py-3 px-4 border-r border-slate-200 text-right">Stock</th>
+                  <th className="py-3 px-4 border-r border-slate-200 text-center">Expiry Status</th>
                   <th className="py-3 px-4 text-center">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {filteredProducts.map((product) => {
-                  const totalStock = getTotalStock(product.variants);
+                  const variants = product.variants || [];
                   const categoryName =
                     product.category?.name ||
                     categories.find((c) => c.id === product.category_id)?.name ||
                     'General';
 
-                  const expiryBadge = getProductExpiryBadge(product.variants);
+                  // SINGLE PRODUCT CASE (1 Variant) -> Display as 1 clean standard row!
+                  if (variants.length <= 1) {
+                    const singleVar = variants[0] || {
+                      variant_name: 'Standard Pack',
+                      cost_price: 0,
+                      selling_price: 0,
+                      stock_quantity: 0,
+                      expiry_date: null,
+                    };
 
-                  return (
-                    <tr
-                      key={product.id}
-                      className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
-                    >
-                      <td className="py-3.5 px-4 font-semibold text-slate-900">
-                        <Link
-                          href={`/products/${product.id}`}
-                          className="hover:text-emerald-700 flex items-center gap-2"
-                        >
-                          <span>{product.name}</span>
-                        </Link>
-                      </td>
+                    return (
+                      <tr
+                        key={product.id}
+                        className="hover:bg-slate-50/90 transition-colors border-t border-slate-300"
+                      >
+                        {/* Product Name & Company */}
+                        <td className="py-3.5 px-4 border-r border-slate-300 font-bold text-slate-900">
+                          <Link
+                            href={`/products/${product.id}`}
+                            className="hover:text-emerald-700 block leading-tight text-base"
+                          >
+                            {product.name}
+                          </Link>
+                          {product.company && (
+                            <span className="text-xs font-semibold text-slate-600 block mt-0.5">
+                              {product.company}
+                            </span>
+                          )}
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 mt-1">
+                            <Tag className="w-3 h-3 text-slate-400" />
+                            <span>{categoryName}</span>
+                          </span>
+                        </td>
 
-                      <td className="py-3.5 px-4 text-slate-600 font-medium">
-                        {product.company || '—'}
-                      </td>
+                        {/* Item Index # */}
+                        <td className="py-3.5 px-3 text-center border-r border-slate-200 font-mono text-xs text-slate-400">
+                          1
+                        </td>
 
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                          <Tag className="w-3 h-3 text-slate-400" />
-                          <span>{categoryName}</span>
-                        </span>
-                      </td>
+                        {/* Pack Size */}
+                        <td className="py-3.5 px-4 border-r border-slate-200 font-semibold text-slate-900">
+                          {singleVar.variant_name || 'Standard Pack'}
+                        </td>
 
-                      <td className="py-3.5 px-4 text-center font-mono font-medium text-slate-700">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-xs border border-emerald-200">
-                          <Layers className="w-3 h-3 text-emerald-600" />
-                          <span>{product.variants?.length || 0}</span>
-                        </span>
-                      </td>
+                        {/* Cost Price */}
+                        <td className="py-3.5 px-4 border-r border-slate-200 text-right font-mono text-xs text-slate-600 tabular-nums">
+                          ₹{Number(singleVar.cost_price).toFixed(2)}
+                        </td>
 
-                      <td className="py-3.5 px-4 text-right font-mono font-semibold text-slate-900 tabular-nums">
-                        {getPriceRange(product.variants)}
-                      </td>
+                        {/* Selling Price */}
+                        <td className="py-3.5 px-4 border-r border-slate-200 text-right font-mono font-bold text-slate-900 tabular-nums">
+                          ₹{Number(singleVar.selling_price).toFixed(2)}
+                        </td>
 
-                      <td className="py-3.5 px-4 text-right font-mono font-bold tabular-nums">
-                        <span
-                          className={totalStock > 0 ? 'text-emerald-700' : 'text-amber-600'}
-                        >
-                          {totalStock}
-                        </span>
-                      </td>
+                        {/* Stock */}
+                        <td className="py-3.5 px-4 border-r border-slate-200 text-right font-mono font-bold tabular-nums">
+                          <span
+                            className={
+                              Number(singleVar.stock_quantity) > 0 ? 'text-emerald-800' : 'text-red-600'
+                            }
+                          >
+                            {singleVar.stock_quantity}
+                          </span>
+                        </td>
 
-                      <td className="py-3.5 px-4 text-center">
-                        {expiryBadge || <span className="text-slate-400 text-xs">OK</span>}
-                      </td>
+                        {/* Expiry Status */}
+                        <td className="py-3.5 px-4 border-r border-slate-200 text-center">
+                          {renderExpiryBadge(singleVar.expiry_date)}
+                        </td>
 
-                      <td className="py-3.5 px-4 text-center">
-                        <Link
-                          href={`/products/${product.id}`}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-emerald-600 hover:text-white text-xs font-semibold text-slate-700 transition-colors"
-                        >
-                          <span>Manage</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </Link>
-                      </td>
-                    </tr>
-                  );
+                        {/* Action */}
+                        <td className="py-3.5 px-4 text-center">
+                          <Link
+                            href={`/products/${product.id}`}
+                            className="inline-flex items-center gap-1 px-3 py-1 rounded-md bg-slate-100 hover:bg-emerald-600 hover:text-white border border-slate-300 text-xs font-semibold text-slate-700 transition-colors shadow-2xs"
+                          >
+                            <span>Manage</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  // MULTIPLE VARIANTS CASE (>1 Variants, e.g. Minolite) -> Display using merged rowspan layout!
+                  const rowSpan = variants.length;
+                  const totalStock = getTotalStock(variants);
+
+                  return variants.map((variant: ProductVariant, index: number) => {
+                    const isFirst = index === 0;
+
+                    return (
+                      <tr
+                        key={variant.id || `${product.id}-${index}`}
+                        className={`hover:bg-slate-50/90 transition-colors ${
+                          !isFirst ? 'border-t border-slate-200' : 'border-t-2 border-slate-300'
+                        }`}
+                      >
+                        {/* Merged Product Name Cell spanning across all variants */}
+                        {isFirst && (
+                          <td
+                            rowSpan={rowSpan}
+                            className="py-4 px-4 border-r border-slate-300 bg-slate-50/50 align-top space-y-2"
+                          >
+                            <div>
+                              <Link
+                                href={`/products/${product.id}`}
+                                className="font-bold text-base text-slate-900 hover:text-emerald-700 block leading-tight"
+                              >
+                                {product.name}
+                              </Link>
+                              {product.company && (
+                                <p className="text-xs font-semibold text-slate-600 mt-0.5">
+                                  {product.company}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded bg-white text-slate-700 border border-slate-300">
+                                <Tag className="w-3 h-3 text-slate-400" />
+                                <span>{categoryName}</span>
+                              </span>
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                <Layers className="w-3 h-3 text-emerald-600" />
+                                <span>{variants.length} Pack Sizes</span>
+                              </span>
+                            </div>
+
+                            <div className="pt-2 text-xs font-mono font-bold text-slate-700">
+                              Total Stock: <span className="text-emerald-800">{totalStock} units</span>
+                            </div>
+                          </td>
+                        )}
+
+                        {/* Variant Index # (1, 2, 3...) */}
+                        <td className="py-3 px-3 text-center border-r border-slate-200 font-mono text-xs font-bold text-slate-600 bg-slate-50/40">
+                          {index + 1}
+                        </td>
+
+                        {/* Variant Pack Size */}
+                        <td className="py-3 px-4 border-r border-slate-200 font-bold text-slate-900">
+                          {variant.variant_name}
+                        </td>
+
+                        {/* Cost Price */}
+                        <td className="py-3 px-4 border-r border-slate-200 text-right font-mono text-xs text-slate-600 tabular-nums">
+                          ₹{Number(variant.cost_price).toFixed(2)}
+                        </td>
+
+                        {/* Selling Price */}
+                        <td className="py-3 px-4 border-r border-slate-200 text-right font-mono font-bold text-slate-900 tabular-nums">
+                          ₹{Number(variant.selling_price).toFixed(2)}
+                        </td>
+
+                        {/* Stock */}
+                        <td className="py-3 px-4 border-r border-slate-200 text-right font-mono font-bold tabular-nums">
+                          <span
+                            className={
+                              Number(variant.stock_quantity) > 0 ? 'text-emerald-800' : 'text-red-600'
+                            }
+                          >
+                            {variant.stock_quantity}
+                          </span>
+                        </td>
+
+                        {/* Expiry Status */}
+                        <td className="py-3 px-4 border-r border-slate-200 text-center">
+                          {renderExpiryBadge(variant.expiry_date)}
+                        </td>
+
+                        {/* Action (Manage product link on first row) */}
+                        {isFirst && (
+                          <td
+                            rowSpan={rowSpan}
+                            className="py-4 px-4 text-center align-top bg-white border-l border-slate-200"
+                          >
+                            <Link
+                              href={`/products/${product.id}`}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-slate-100 hover:bg-emerald-600 hover:text-white border border-slate-300 text-xs font-semibold text-slate-700 transition-colors shadow-2xs"
+                            >
+                              <span>Manage</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </Link>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  });
                 })}
               </tbody>
             </table>
           </div>
 
           {/* Mobile Card Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden">
+          <div className="grid grid-cols-1 gap-4 md:hidden">
             {filteredProducts.map((product) => {
               const totalStock = getTotalStock(product.variants);
               const categoryName =
@@ -307,59 +426,75 @@ export default function ProductsListPage() {
                 categories.find((c) => c.id === product.category_id)?.name ||
                 'General';
 
-              const expiryBadge = getProductExpiryBadge(product.variants);
-
               return (
-                <Link
+                <div
                   key={product.id}
-                  href={`/products/${product.id}`}
-                  className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs hover:border-emerald-300 transition-all space-y-3 block"
+                  className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden space-y-3 p-4"
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
                     <div>
-                      <h3 className="font-bold text-base text-slate-900 leading-tight">
+                      <Link href={`/products/${product.id}`} className="font-bold text-lg text-slate-900 leading-tight hover:text-emerald-700">
                         {product.name}
-                      </h3>
+                      </Link>
                       {product.company && (
-                        <p className="text-xs text-slate-500 font-medium mt-0.5">
+                        <p className="text-xs text-slate-600 font-semibold mt-0.5">
                           {product.company}
                         </p>
                       )}
                     </div>
-                    <span className="text-xs font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
                       {categoryName}
                     </span>
                   </div>
 
-                  {expiryBadge && <div>{expiryBadge}</div>}
-
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs font-mono">
-                    <div>
-                      <span className="text-slate-400 block text-[10px] uppercase font-sans">
-                        Variants
-                      </span>
-                      <span className="font-semibold text-slate-800">
-                        {product.variants?.length || 0} pack sizes
-                      </span>
-                    </div>
-
-                    <div className="text-right">
-                      <span className="text-slate-400 block text-[10px] uppercase font-sans">
-                        Price Range
-                      </span>
-                      <span className="font-bold text-emerald-800">
-                        {getPriceRange(product.variants)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1 text-xs">
-                    <span className="text-slate-500 font-medium">Total Stock:</span>
-                    <span className="font-mono font-bold text-slate-900">
-                      {totalStock} units
+                  {/* Direct Variant Cards List */}
+                  <div className="space-y-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                      Pack Sizes & Pricing ({product.variants?.length || 0})
                     </span>
+
+                    <div className="space-y-2">
+                      {product.variants?.map((v: ProductVariant, idx: number) => (
+                        <div
+                          key={v.id || idx}
+                          className="p-3 rounded-lg border-l-4 border-l-emerald-500 bg-slate-50 flex items-center justify-between text-xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-slate-400 font-bold">#{idx + 1}</span>
+                            <div>
+                              <span className="font-bold text-slate-900 block text-sm">
+                                {v.variant_name}
+                              </span>
+                              <span className="text-slate-500 text-[11px]">
+                                Cost: ₹{Number(v.cost_price).toFixed(2)} | Stock: <strong className="text-slate-800">{v.stock_quantity}</strong>
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-right space-y-1">
+                            <span className="font-mono font-bold text-emerald-800 text-sm block">
+                              ₹{Number(v.selling_price).toFixed(2)}
+                            </span>
+                            <div>{renderExpiryBadge(v.expiry_date)}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </Link>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-xs text-slate-500 font-medium">
+                      Total Stock: <strong className="text-emerald-800 font-mono">{totalStock} units</strong>
+                    </span>
+                    <Link
+                      href={`/products/${product.id}`}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded bg-emerald-600 text-white text-xs font-bold shadow-xs"
+                    >
+                      <span>Manage</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+                </div>
               );
             })}
           </div>

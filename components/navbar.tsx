@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getCurrentUser, getShop, signOutUser } from '@/lib/supabase/db';
-import { Sprout, Store, Package, PlusCircle, Menu, X, ChevronRight, LogOut, User as UserIcon, Settings } from 'lucide-react';
+import { Sprout, Store, Package, PlusCircle, Menu, X, ChevronRight, LogOut, User as UserIcon, Settings, Briefcase, Receipt, History, Users } from 'lucide-react';
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -33,8 +33,11 @@ export default function Navbar() {
   };
 
   const navLinks = [
-    { name: 'Products', href: '/products', icon: Package },
-    { name: 'Add Product', href: '/products/new', icon: PlusCircle },
+    { name: 'New Sale (Billing)', href: '/billing', icon: Receipt },
+    { name: 'Products Catalog', href: '/products', icon: Package },
+    { name: 'Farmers', href: '/farmers', icon: Users },
+    { name: 'Companies', href: '/companies', icon: Briefcase },
+    { name: 'Sales History', href: '/sales', icon: History },
     { name: 'Shop Settings', href: '/settings', icon: Settings },
   ];
 
@@ -90,7 +93,7 @@ export default function Navbar() {
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-2">
+          <nav className="hidden md:flex items-center gap-1.5">
             {currentUser &&
               activeShop &&
               navLinks.map((link) => {
@@ -104,9 +107,9 @@ export default function Navbar() {
                   <Link
                     key={link.href}
                     href={link.href}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium transition-all ${
                       isActive
-                        ? 'bg-emerald-50 text-emerald-800 font-semibold shadow-2xs border border-emerald-200/60'
+                        ? 'bg-emerald-50 text-emerald-800 font-bold shadow-2xs border border-emerald-200/60'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
