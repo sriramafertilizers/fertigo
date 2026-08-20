@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getProductById, getCategories, updateProduct, deleteVariant, createCategory } from '@/lib/supabase/db';
+import { getProductById, getCategories, updateProduct, deleteProduct, deleteVariant, createCategory } from '@/lib/supabase/db';
 import { PREDEFINED_UNITS, UnitOption } from '@/lib/types';
 import CategoryModal from '@/components/category-modal';
 import { DashRing } from '@/components/loading-ui/dash-ring';
@@ -43,6 +43,7 @@ export default function ProductDetailPage() {
   const productId = params.id as string;
 
   const [isEditing, setIsEditing] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [productName, setProductName] = useState('');
   const [company, setCompany] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -141,6 +142,7 @@ export default function ProductDetailPage() {
     setCategoryId(newCat.id);
   };
 
+  // Update Mutation
   const updateMutation = useMutation({
     mutationFn: async () => {
       if (!productName.trim()) throw new Error('Product name is required');
@@ -185,6 +187,21 @@ export default function ProductDetailPage() {
     },
     onError: (err: any) => {
       setErrorMsg(err.message || 'Failed to update product');
+    },
+  });
+
+  // Delete Mutation
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      return deleteProduct(productId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      router.push('/products');
+    },
+    onError: (err: any) => {
+      setErrorMsg(err.message || 'Failed to delete product.');
+      setIsDeleteModalOpen(false);
     },
   });
 
@@ -254,26 +271,39 @@ export default function ProductDetailPage() {
           </div>
         </div>
 
-        <button
-          onClick={() => {
-            if (isEditing) {
-              setIsEditing(false);
-              setProductName(product.name);
-              setCompany(product.company || '');
-              setCategoryId(product.category_id || '');
-            } else {
-              setIsEditing(true);
-            }
-          }}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-xs transition-all cursor-pointer ${
-            isEditing
-              ? 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
-              : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-          }`}
-        >
-          {isEditing ? <X className="w-4 h-4" /> : <Edit2 className="w-4 h-4" />}
-          <span>{isEditing ? 'Cancel Editing' : 'Edit Product'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Edit Button */}
+          <button
+            onClick={() => {
+              if (isEditing) {
+                setIsEditing(false);
+                setProductName(product.name);
+                setCompany(product.company || '');
+                setCategoryId(product.category_id || '');
+              } else {
+                setIsEditing(true);
+              }
+            }}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-xs transition-all cursor-pointer ${
+              isEditing
+                ? 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+            }`}
+          >
+            {isEditing ? <X className="w-4 h-4" /> : <Edit2 className="w-4 h-4" />}
+            <span>{isEditing ? 'Cancel Editing' : 'Edit Product'}</span>
+          </button>
+
+          {/* Delete Button */}
+          <button
+            onClick={() => setIsDeleteModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 font-semibold text-xs transition-colors cursor-pointer"
+            title="Delete Product"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>Delete</span>
+          </button>
+        </div>
       </div>
 
       {successMsg && (
@@ -291,7 +321,7 @@ export default function ProductDetailPage() {
       )}
 
       <form onSubmit={handleSave} className="space-y-6">
-        {/* Basic Details */}
+        {/* Section 1: Basic Details */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-5 sm:p-6 space-y-4">
           <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
             <Package className="w-4 h-4 text-emerald-600" />
@@ -386,7 +416,7 @@ export default function ProductDetailPage() {
           )}
         </div>
 
-        {/* Section 2: Pack Sizes & Expiry */}
+        {/* Section 2: Pack Sizes */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-5 sm:p-6 space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
@@ -638,6 +668,57 @@ export default function ProductDetailPage() {
           </div>
         )}
       </form>
+
+      {/* Confirmation Modal for Delete Product */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Delete Product?</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Are you sure you want to delete <span className="font-bold text-slate-900">&ldquo;{product.name}&rdquo;</span>?
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200">
+              This action will permanently delete <span className="font-semibold text-slate-800">{product.name}</span> and all associated pack sizes. This action cannot be undone.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+              >
+                {deleteMutation.isPending ? (
+                  <>
+                    <DashRing size={16} className="text-white" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Yes, Delete Product</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <CategoryModal
         isOpen={isCategoryModalOpen}

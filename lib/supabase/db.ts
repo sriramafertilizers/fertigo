@@ -32,7 +32,6 @@ export async function signUpWithMobile(mobile: string, pass: string): Promise<Us
 
     if (error) throw new Error(error.message);
 
-    // Try immediate sign in
     const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
       email,
       password: safePassword,
@@ -514,6 +513,18 @@ export async function updateProduct(input: UpdateProductInput): Promise<ProductW
 
   setLocalStore('products', prods);
   return prods[idx];
+}
+
+export async function deleteProduct(productId: string): Promise<void> {
+  if (isSupabaseConfigured && supabase) {
+    const { error } = await supabase.from('products').delete().eq('id', productId);
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const prods = getLocalStore<ProductWithVariants[]>('products', []);
+  const updatedProds = prods.filter((p) => p.id !== productId);
+  setLocalStore('products', updatedProds);
 }
 
 export async function deleteVariant(variantId: string): Promise<void> {
