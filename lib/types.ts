@@ -35,6 +35,7 @@ export interface ProductVariant {
   cost_price: number;
   selling_price: number;
   stock_quantity: number;
+  expiry_date?: string | null;
   created_at?: string;
 }
 

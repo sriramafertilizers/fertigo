@@ -59,6 +59,7 @@ create table if not exists public.product_variants (
   cost_price numeric(12, 2) not null default 0.00,
   selling_price numeric(12, 2) not null default 0.00,
   stock_quantity numeric(12, 2) not null default 0.00,
+  expiry_date date null,             -- Expiry date for pesticide/fertilizer batch
   created_at timestamp with time zone not null default now(),
   constraint product_variants_pkey primary key (id),
   constraint variants_product_name_unique unique (product_id, variant_name)

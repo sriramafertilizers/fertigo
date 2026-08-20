@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getShop, getProducts, getCategories } from '@/lib/supabase/db';
 import { ProductWithVariants } from '@/lib/types';
 import { DashRing } from '@/components/loading-ui/dash-ring';
+import { getExpiryStatus } from '@/lib/utils';
 import {
   Package,
   Search,
@@ -15,6 +16,8 @@ import {
   Tag,
   Layers,
   XCircle,
+  AlertTriangle,
+  Clock,
   IndianRupee,
 } from 'lucide-react';
 
@@ -22,13 +25,11 @@ export default function ProductsListPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
 
-  // Fetch Active Shop
   const { data: shop } = useQuery({
     queryKey: ['shop'],
     queryFn: () => getShop(),
   });
 
-  // Fetch Products & Categories
   const { data: products = [], isLoading: isProductsLoading } = useQuery({
     queryKey: ['products', shop?.id],
     queryFn: () => (shop?.id ? getProducts(shop.id) : Promise.resolve([])),
@@ -41,7 +42,6 @@ export default function ProductsListPage() {
     enabled: Boolean(shop?.id),
   });
 
-  // Filter Products
   const filteredProducts = products.filter((prod) => {
     const matchesSearch =
       prod.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -69,6 +69,43 @@ export default function ProductsListPage() {
     return variants.reduce((sum, v) => sum + Number(v.stock_quantity || 0), 0);
   };
 
+  const getProductExpiryBadge = (variants: ProductWithVariants['variants']) => {
+    if (!variants || variants.length === 0) return null;
+    const statuses = variants.map((v) => getExpiryStatus(v.expiry_date));
+
+    const expired = statuses.find((s) => s.status === 'EXPIRED');
+    if (expired) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">
+          <AlertTriangle className="w-3 h-3 text-red-600" />
+          <span>Has Expired Variant</span>
+        </span>
+      );
+    }
+
+    const critical = statuses.find((s) => s.status === 'CRITICAL');
+    if (critical) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+          <Clock className="w-3 h-3 text-amber-700" />
+          <span>{critical.label}</span>
+        </span>
+      );
+    }
+
+    const warning = statuses.find((s) => s.status === 'WARNING');
+    if (warning) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+          <Clock className="w-3 h-3 text-amber-600" />
+          <span>{warning.label}</span>
+        </span>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header Bar */}
@@ -82,7 +119,7 @@ export default function ProductsListPage() {
             Products Catalog
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Manage agri inputs, pack sizes, costs, selling prices, and inventory
+            Manage agri inputs, pack sizes, costs, selling prices, stock, and expiry dates
           </p>
         </div>
 
@@ -97,7 +134,6 @@ export default function ProductsListPage() {
 
       {/* Filter and Search Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-        {/* Search Input */}
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
@@ -117,7 +153,6 @@ export default function ProductsListPage() {
           )}
         </div>
 
-        {/* Category Dropdown */}
         <div className="flex items-center gap-2">
           <Filter className="w-4 h-4 text-slate-400 hidden sm:inline-block" />
           <select
@@ -147,14 +182,13 @@ export default function ProductsListPage() {
         </div>
       </div>
 
-      {/* Loading State with DashRing */}
+      {/* Loading State */}
       {isProductsLoading ? (
         <div className="bg-white p-16 rounded-xl border border-slate-200 text-center flex flex-col items-center justify-center gap-3">
           <DashRing size={36} />
           <span className="text-sm font-semibold text-slate-700">Loading catalog products...</span>
         </div>
       ) : filteredProducts.length === 0 ? (
-        /* Empty State */
         <div className="bg-white p-12 rounded-xl border border-slate-200 text-center space-y-3">
           <Package className="w-12 h-12 text-slate-300 mx-auto" />
           <h3 className="text-base font-bold text-slate-900">No products found</h3>
@@ -186,6 +220,7 @@ export default function ProductsListPage() {
                   <th className="py-3 px-4 text-center">Variants</th>
                   <th className="py-3 px-4 text-right">Selling Price Range</th>
                   <th className="py-3 px-4 text-right">Total Stock</th>
+                  <th className="py-3 px-4 text-center">Expiry Status</th>
                   <th className="py-3 px-4 text-center">Action</th>
                 </tr>
               </thead>
@@ -196,6 +231,8 @@ export default function ProductsListPage() {
                     product.category?.name ||
                     categories.find((c) => c.id === product.category_id)?.name ||
                     'General';
+
+                  const expiryBadge = getProductExpiryBadge(product.variants);
 
                   return (
                     <tr
@@ -242,6 +279,10 @@ export default function ProductsListPage() {
                       </td>
 
                       <td className="py-3.5 px-4 text-center">
+                        {expiryBadge || <span className="text-slate-400 text-xs">OK</span>}
+                      </td>
+
+                      <td className="py-3.5 px-4 text-center">
                         <Link
                           href={`/products/${product.id}`}
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-100 hover:bg-emerald-600 hover:text-white text-xs font-semibold text-slate-700 transition-colors"
@@ -266,6 +307,8 @@ export default function ProductsListPage() {
                 categories.find((c) => c.id === product.category_id)?.name ||
                 'General';
 
+              const expiryBadge = getProductExpiryBadge(product.variants);
+
               return (
                 <Link
                   key={product.id}
@@ -287,6 +330,8 @@ export default function ProductsListPage() {
                       {categoryName}
                     </span>
                   </div>
+
+                  {expiryBadge && <div>{expiryBadge}</div>}
 
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs font-mono">
                     <div>

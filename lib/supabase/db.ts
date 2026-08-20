@@ -357,6 +357,7 @@ export interface CreateProductInput {
     cost_price: number;
     selling_price: number;
     stock_quantity: number;
+    expiry_date?: string | null;
   }>;
 }
 
@@ -386,6 +387,7 @@ export async function createProduct(input: CreateProductInput): Promise<ProductW
       cost_price: v.cost_price,
       selling_price: v.selling_price,
       stock_quantity: v.stock_quantity,
+      expiry_date: v.expiry_date || null,
     }));
 
     const { data: varData, error: varErr } = await supabase
@@ -419,6 +421,7 @@ export async function createProduct(input: CreateProductInput): Promise<ProductW
       cost_price: v.cost_price,
       selling_price: v.selling_price,
       stock_quantity: v.stock_quantity,
+      expiry_date: v.expiry_date || null,
     })),
   };
 
@@ -441,6 +444,7 @@ export interface UpdateProductInput {
     cost_price: number;
     selling_price: number;
     stock_quantity: number;
+    expiry_date?: string | null;
   }>;
 }
 
@@ -466,6 +470,7 @@ export async function updateProduct(input: UpdateProductInput): Promise<ProductW
       cost_price: v.cost_price,
       selling_price: v.selling_price,
       stock_quantity: v.stock_quantity,
+      expiry_date: v.expiry_date || null,
     }));
 
     const { error: varErr } = await supabase.from('product_variants').upsert(variantRows);
@@ -494,6 +499,7 @@ export async function updateProduct(input: UpdateProductInput): Promise<ProductW
       cost_price: v.cost_price,
       selling_price: v.selling_price,
       stock_quantity: v.stock_quantity,
+      expiry_date: v.expiry_date || null,
     };
   });
 

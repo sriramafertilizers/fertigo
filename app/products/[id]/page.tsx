@@ -8,6 +8,7 @@ import { getProductById, getCategories, updateProduct, deleteVariant, createCate
 import { PREDEFINED_UNITS, UnitOption } from '@/lib/types';
 import CategoryModal from '@/components/category-modal';
 import { DashRing } from '@/components/loading-ui/dash-ring';
+import { getExpiryStatus } from '@/lib/utils';
 import {
   Package,
   ArrowLeft,
@@ -20,7 +21,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   X,
-  IndianRupee,
+  Calendar,
+  Clock,
 } from 'lucide-react';
 
 interface EditableVariantRow {
@@ -31,6 +33,7 @@ interface EditableVariantRow {
   cost_price: string;
   selling_price: string;
   stock_quantity: string;
+  expiry_date: string;
 }
 
 export default function ProductDetailPage() {
@@ -73,6 +76,7 @@ export default function ProductDetailPage() {
           cost_price: String(v.cost_price),
           selling_price: String(v.selling_price),
           stock_quantity: String(v.stock_quantity),
+          expiry_date: v.expiry_date || '',
         }))
       );
     }
@@ -88,6 +92,7 @@ export default function ProductDetailPage() {
         cost_price: '0',
         selling_price: '0',
         stock_quantity: '0',
+        expiry_date: '',
       },
     ]);
   };
@@ -159,6 +164,7 @@ export default function ProductDetailPage() {
           cost_price: cost,
           selling_price: selling,
           stock_quantity: stock,
+          expiry_date: v.expiry_date || null,
         };
       });
 
@@ -285,7 +291,7 @@ export default function ProductDetailPage() {
       )}
 
       <form onSubmit={handleSave} className="space-y-6">
-        {/* Section 1: Details */}
+        {/* Basic Details */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-5 sm:p-6 space-y-4">
           <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
             <Package className="w-4 h-4 text-emerald-600" />
@@ -380,13 +386,13 @@ export default function ProductDetailPage() {
           )}
         </div>
 
-        {/* Section 2: Pack Sizes */}
+        {/* Section 2: Pack Sizes & Expiry */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-5 sm:p-6 space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-emerald-600" />
               <h2 className="text-base font-bold text-slate-900">
-                Pack Sizes & Pricing ({product.variants.length})
+                Pack Sizes, Pricing & Expiry ({product.variants.length})
               </h2>
             </div>
 
@@ -423,7 +429,7 @@ export default function ProductDetailPage() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-7 gap-3">
                     <div>
                       <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                         Qty
@@ -506,6 +512,19 @@ export default function ProductDetailPage() {
                         className="w-full px-2.5 py-1.5 rounded border border-slate-300 text-sm font-mono font-bold text-emerald-800 bg-white"
                       />
                     </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-slate-400" />
+                        <span>Expiry Date</span>
+                      </label>
+                      <input
+                        type="date"
+                        value={v.expiry_date}
+                        onChange={(e) => updateVariantField(index, 'expiry_date', e.target.value)}
+                        className="w-full px-2 py-1.5 rounded border border-slate-300 text-xs font-mono text-slate-900 bg-white"
+                      />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -520,11 +539,14 @@ export default function ProductDetailPage() {
                     <th className="py-2.5 px-3 text-right">Selling Price</th>
                     <th className="py-2.5 px-3 text-right">Margin / Unit</th>
                     <th className="py-2.5 px-3 text-right">In Stock</th>
+                    <th className="py-2.5 px-3 text-right">Expiry Countdown</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {product.variants.map((v) => {
                     const margin = Number(v.selling_price || 0) - Number(v.cost_price || 0);
+                    const expiry = getExpiryStatus(v.expiry_date);
+
                     return (
                       <tr key={v.id} className="hover:bg-slate-50/60">
                         <td className="py-3 px-3 font-bold text-slate-900">
@@ -551,6 +573,31 @@ export default function ProductDetailPage() {
                           >
                             {v.stock_quantity}
                           </span>
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-xs font-medium">
+                          {expiry.status === 'NONE' ? (
+                            <span className="text-slate-400 font-normal">Not Set</span>
+                          ) : expiry.status === 'EXPIRED' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold border border-red-200">
+                              <AlertTriangle className="w-3 h-3 text-red-600" />
+                              <span>{expiry.label}</span>
+                            </span>
+                          ) : expiry.status === 'CRITICAL' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-bold border border-amber-300">
+                              <Clock className="w-3 h-3 text-amber-700" />
+                              <span>{expiry.label}</span>
+                            </span>
+                          ) : expiry.status === 'WARNING' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-semibold border border-amber-200">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              <span>{expiry.label}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-medium border border-emerald-200">
+                              <Calendar className="w-3 h-3 text-emerald-600" />
+                              <span>{expiry.formattedDate}</span>
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );

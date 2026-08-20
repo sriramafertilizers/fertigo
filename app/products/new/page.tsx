@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   Tag,
   Layers,
+  Calendar,
   IndianRupee,
 } from 'lucide-react';
 
@@ -28,6 +29,7 @@ interface VariantRow {
   cost_price: string;
   selling_price: string;
   stock_quantity: string;
+  expiry_date: string;
 }
 
 export default function CreateProductPage() {
@@ -49,6 +51,7 @@ export default function CreateProductPage() {
       cost_price: '220',
       selling_price: '275',
       stock_quantity: '10',
+      expiry_date: '',
     },
   ]);
 
@@ -93,6 +96,7 @@ export default function CreateProductPage() {
         cost_price: '0',
         selling_price: '0',
         stock_quantity: '0',
+        expiry_date: '',
       },
     ]);
   };
@@ -153,6 +157,7 @@ export default function CreateProductPage() {
           cost_price: cost,
           selling_price: selling,
           stock_quantity: stock,
+          expiry_date: v.expiry_date || null,
         };
       });
 
@@ -192,7 +197,7 @@ export default function CreateProductPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Add New Product</h1>
           <p className="text-xs text-slate-500">
-            Define basic product info and pack size variants
+            Define basic product info, pack size variants, and expiry dates
           </p>
         </div>
       </div>
@@ -289,7 +294,7 @@ export default function CreateProductPage() {
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-emerald-600" />
-              <h2 className="text-base font-bold text-slate-900">Pack Sizes & Pricing</h2>
+              <h2 className="text-base font-bold text-slate-900">Pack Sizes, Pricing & Expiry</h2>
             </div>
             <button
               type="button"
@@ -301,14 +306,14 @@ export default function CreateProductPage() {
             </button>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
             {variants.map((v, index) => (
               <div
                 key={v.id}
                 className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3"
               >
                 <div className="flex items-center justify-between text-xs font-bold text-slate-600">
-                  <span>Variant #{index + 1}</span>
+                  <span>Variant #{index + 1} — {v.variant_name}</span>
                   {variants.length > 1 && (
                     <button
                       type="button"
@@ -321,7 +326,7 @@ export default function CreateProductPage() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-7 gap-3">
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                       Qty
@@ -392,7 +397,7 @@ export default function CreateProductPage() {
 
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      Initial Stock
+                      Stock
                     </label>
                     <input
                       type="number"
@@ -400,6 +405,20 @@ export default function CreateProductPage() {
                       value={v.stock_quantity}
                       onChange={(e) => updateVariantRow(v.id, 'stock_quantity', e.target.value)}
                       className="w-full px-2.5 py-1.5 rounded border border-slate-300 text-sm font-mono font-bold text-emerald-800 bg-white"
+                    />
+                  </div>
+
+                  {/* Expiry Date */}
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-slate-400" />
+                      <span>Expiry Date</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={v.expiry_date}
+                      onChange={(e) => updateVariantRow(v.id, 'expiry_date', e.target.value)}
+                      className="w-full px-2 py-1.5 rounded border border-slate-300 text-xs font-mono text-slate-900 bg-white"
                     />
                   </div>
                 </div>
