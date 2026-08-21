@@ -15,6 +15,8 @@ import {
   ArrowUpRight,
   ShieldAlert,
   Wallet,
+  Percent,
+  Sparkles,
 } from 'lucide-react';
 
 interface DashboardMetricsProps {
@@ -29,8 +31,21 @@ export default function DashboardMetrics({ sales, products }: DashboardMetricsPr
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  // Calculate Today's Sales & Metrics
+  // Variant Cost Price Lookup Map for exact profit calculation
+  const variantCostMap = React.useMemo(() => {
+    const map = new Map<string, number>();
+    products.forEach((p) => {
+      (p.variants || []).forEach((v) => {
+        if (v.id) map.set(v.id, Number(v.cost_price || 0));
+        if (v.variant_name) map.set(`${p.name.toLowerCase()}-${v.variant_name.toLowerCase()}`, Number(v.cost_price || 0));
+      });
+    });
+    return map;
+  }, [products]);
+
+  // Calculate Today's Metrics & Gross Profit
   let todaySalesTotal = 0;
+  let todayGrossProfit = 0;
   let todayCashTotal = 0;
   let todayUpiTotal = 0;
   let todayCreditTotal = 0;
@@ -50,12 +65,24 @@ export default function DashboardMetrics({ sales, products }: DashboardMetricsPr
       if (s.payment_mode === 'CASH') todayCashTotal += net;
       else if (s.payment_mode === 'UPI') todayUpiTotal += net;
       else if (s.payment_mode === 'CREDIT') todayCreditTotal += net;
+
+      // Calculate Gross Profit for today's bill items
+      (s.items || []).forEach((item) => {
+        const costPrice =
+          (item.variant_id ? variantCostMap.get(item.variant_id) : undefined) ??
+          variantCostMap.get(`${item.product_name.toLowerCase()}-${item.variant_name.toLowerCase()}`) ??
+          Number(item.unit_price) * 0.85;
+
+        const itemProfit = (Number(item.unit_price) - Number(costPrice)) * Number(item.quantity || 1);
+        todayGrossProfit += itemProfit;
+      });
     } else if (sDate >= yesterday && sDate < today) {
       yesterdaySalesTotal += Number(s.net_amount || 0);
     }
   });
 
   const liquidCollections = todayCashTotal + todayUpiTotal;
+  const avgMarginPercent = todaySalesTotal > 0 ? ((todayGrossProfit / todaySalesTotal) * 100).toFixed(1) : '0.0';
 
   // % change vs yesterday
   let percentageChange = 0;
@@ -81,135 +108,169 @@ export default function DashboardMetrics({ sales, products }: DashboardMetricsPr
   });
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full max-w-full">
-      {/* Metric 1: Today's Total Sales Revenue */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-emerald-300 transition-all">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-            Today&apos;s Revenue
-          </span>
-          <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
-            <IndianRupee className="w-5 h-5 text-emerald-700" />
-          </div>
-        </div>
-
-        <div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-mono tabular-nums">
-            ₹{todaySalesTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </div>
-          <div className="flex items-center gap-1.5 mt-1.5 text-xs">
-            {percentageChange >= 0 ? (
-              <span className="inline-flex items-center gap-1 font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                <TrendingUp className="w-3.5 h-3.5" />
-                <span>+{percentageChange}% vs yesterday</span>
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 font-extrabold text-red-700 bg-red-50 px-2 py-0.5 rounded-md border border-red-200">
-                <TrendingDown className="w-3.5 h-3.5" />
-                <span>{percentageChange}% vs yesterday</span>
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium flex justify-between">
-          <span>{todayBillCount} bills created today</span>
-          <Link href="/sales" className="text-emerald-700 font-bold hover:underline">
-            View Register →
-          </Link>
-        </div>
-      </div>
-
-      {/* Metric 2: Liquid Cash & UPI Collected */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-emerald-300 transition-all">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-            Cash & UPI Received
-          </span>
-          <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center font-bold">
-            <Wallet className="w-5 h-5 text-blue-700" />
-          </div>
-        </div>
-
-        <div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-mono tabular-nums">
-            ₹{liquidCollections.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </div>
-          <p className="text-xs font-semibold text-slate-500 mt-1">
-            Cash: <strong className="text-slate-800">₹{todayCashTotal.toFixed(0)}</strong> | UPI: <strong className="text-slate-800">₹{todayUpiTotal.toFixed(0)}</strong>
-          </p>
-        </div>
-
-        <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium">
-          Instant liquid funds in counter
-        </div>
-      </div>
-
-      {/* Metric 3: Katha Credit Issued Today */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-amber-300 transition-all">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-            Katha Credit Issued
-          </span>
-          <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center font-bold">
-            <CreditCard className="w-5 h-5 text-amber-700" />
-          </div>
-        </div>
-
-        <div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-amber-800 font-mono tabular-nums">
-            ₹{todayCreditTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </div>
-          <p className="text-xs font-bold text-amber-700 mt-1">
-            {todayCreditTotal > 0 ? '⚠️ Outstanding farmer credit added today' : 'No credit issued today'}
-          </p>
-        </div>
-
-        <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium flex justify-between">
-          <span>Farmer credit ledger</span>
-          <Link href="/farmers" className="text-amber-800 font-bold hover:underline">
-            Manage Katha →
-          </Link>
-        </div>
-      </div>
-
-      {/* Metric 4: Inventory Low Stock & Expiry Health Widget */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-emerald-300 transition-all">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-            Inventory Health Alerts
-          </span>
-          <div className="w-9 h-9 rounded-xl bg-red-100 text-red-800 flex items-center justify-center font-bold">
-            <ShieldAlert className="w-5 h-5 text-red-600" />
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <div className="flex justify-between items-center text-xs">
-            <span className="text-slate-600 font-semibold flex items-center gap-1">
-              <PackageX className="w-3.5 h-3.5 text-amber-600" /> Low Stock Packs:
+    <div className="w-full max-w-full">
+      {/* Executive Metric Scorecards (5 Cards Layout) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+        
+        {/* Metric 1: Today's Total Sales Revenue */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-emerald-300 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+              Today&apos;s Revenue
             </span>
-            <strong className={`font-mono font-extrabold ${lowStockCount > 0 ? 'text-amber-700' : 'text-slate-700'}`}>
-              {lowStockCount} items
-            </strong>
+            <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+              <IndianRupee className="w-5 h-5 text-emerald-700" />
+            </div>
           </div>
-          <div className="flex justify-between items-center text-xs">
-            <span className="text-slate-600 font-semibold flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5 text-red-600" /> Expiry Warnings:
-            </span>
-            <strong className={`font-mono font-extrabold ${expiringSoonCount > 0 ? 'text-red-700' : 'text-slate-700'}`}>
-              {expiringSoonCount} items
-            </strong>
+
+          <div>
+            <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-mono tabular-nums">
+              ₹{todaySalesTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </div>
+            <div className="flex items-center gap-1.5 mt-1 text-xs">
+              {percentageChange >= 0 ? (
+                <span className="inline-flex items-center gap-1 font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>+{percentageChange}% vs yesterday</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 font-extrabold text-red-700 bg-red-50 px-2 py-0.5 rounded-md border border-red-200">
+                  <TrendingDown className="w-3.5 h-3.5" />
+                  <span>{percentageChange}% vs yesterday</span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium flex justify-between">
+            <span>{todayBillCount} bills generated</span>
+            <Link href="/sales" className="text-emerald-700 font-bold hover:underline">
+              Register →
+            </Link>
           </div>
         </div>
 
-        <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium flex justify-between">
-          <span>Catalog health check</span>
-          <Link href="/products" className="text-emerald-700 font-bold hover:underline flex items-center gap-0.5">
-            <span>Catalog</span>
-            <ArrowUpRight className="w-3 h-3" />
-          </Link>
+        {/* Metric 2: Estimated Net Gross Profit */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-emerald-200/80 bg-gradient-to-b from-emerald-50/40 to-white shadow-2xs flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-emerald-400 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Est. Gross Profit</span>
+            </span>
+            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs">
+              <Percent className="w-4 h-4" />
+            </div>
+          </div>
+
+          <div>
+            <div className="text-2xl sm:text-3xl font-extrabold text-emerald-900 font-mono tabular-nums">
+              ₹{todayGrossProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </div>
+            <div className="mt-1 text-xs font-extrabold text-emerald-700 flex items-center gap-1">
+              <span>Avg Margin:</span>
+              <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-mono border border-emerald-300">
+                {avgMarginPercent}%
+              </span>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium">
+            Net earning after item cost
+          </div>
         </div>
+
+        {/* Metric 3: Liquid Cash & UPI Received */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-emerald-300 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+              Cash & UPI Received
+            </span>
+            <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center font-bold">
+              <Wallet className="w-5 h-5 text-blue-700" />
+            </div>
+          </div>
+
+          <div>
+            <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-mono tabular-nums">
+              ₹{liquidCollections.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </div>
+            <p className="text-xs font-semibold text-slate-500 mt-1">
+              Cash: <strong className="text-slate-800">₹{todayCashTotal.toFixed(0)}</strong> | UPI: <strong className="text-slate-800">₹{todayUpiTotal.toFixed(0)}</strong>
+            </p>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium">
+            Liquid cash in counter
+          </div>
+        </div>
+
+        {/* Metric 4: Katha Credit Issued Today */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-amber-300 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+              Katha Credit Issued
+            </span>
+            <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center font-bold">
+              <CreditCard className="w-5 h-5 text-amber-700" />
+            </div>
+          </div>
+
+          <div>
+            <div className="text-2xl sm:text-3xl font-extrabold text-amber-800 font-mono tabular-nums">
+              ₹{todayCreditTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </div>
+            <p className="text-xs font-bold text-amber-700 mt-1">
+              {todayCreditTotal > 0 ? '⚠️ Farmer credit added today' : 'No credit issued today'}
+            </p>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium flex justify-between">
+            <span>Farmer credit ledger</span>
+            <Link href="/farmers" className="text-amber-800 font-bold hover:underline">
+              Katha →
+            </Link>
+          </div>
+        </div>
+
+        {/* Metric 5: Inventory Health Alerts */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-emerald-300 transition-all sm:col-span-2 lg:col-span-1">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+              Inventory Alerts
+            </span>
+            <div className="w-9 h-9 rounded-xl bg-red-100 text-red-800 flex items-center justify-center font-bold">
+              <ShieldAlert className="w-5 h-5 text-red-600" />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-slate-600 font-semibold flex items-center gap-1">
+                <PackageX className="w-3.5 h-3.5 text-amber-600" /> Low Stock Packs:
+              </span>
+              <strong className={`font-mono font-extrabold ${lowStockCount > 0 ? 'text-amber-700' : 'text-slate-700'}`}>
+                {lowStockCount} items
+              </strong>
+            </div>
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-slate-600 font-semibold flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-red-600" /> Expiry Warnings:
+              </span>
+              <strong className={`font-mono font-extrabold ${expiringSoonCount > 0 ? 'text-red-700' : 'text-slate-700'}`}>
+                {expiringSoonCount} items
+              </strong>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium flex justify-between">
+            <span>Catalog health check</span>
+            <Link href="/products" className="text-emerald-700 font-bold hover:underline flex items-center gap-0.5">
+              <span>Catalog</span>
+              <ArrowUpRight className="w-3 h-3" />
+            </Link>
+          </div>
+        </div>
+
       </div>
     </div>
   );

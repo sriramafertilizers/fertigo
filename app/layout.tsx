@@ -1,8 +1,9 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Rethink_Sans, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import Providers from '@/lib/providers';
 import Navbar from '@/components/navbar';
+import PWAInstaller from '@/components/pwa-installer';
 
 const rethinkSans = Rethink_Sans({
   subsets: ['latin'],
@@ -18,7 +19,26 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'Fertigo — The simple ERP for agri shops',
-  description: 'Practical, fast, mobile-friendly ERP designed for fertilizer and agricultural retail shops.',
+  description: 'Practical, fast, tablet-first ERP designed for fertilizer and agricultural retail shops.',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Fertigo ERP',
+  },
+  icons: {
+    icon: '/icons/icon-192.png',
+    apple: '/icons/icon-192.png',
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#059669',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({
@@ -35,6 +55,11 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Rethink+Sans:ital,wght@0,400..800;1,400..800&display=swap"
           rel="stylesheet"
         />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="Fertigo ERP" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
       <body className="min-h-dvh w-full max-w-full overflow-x-hidden bg-slate-50 text-slate-900 font-sans antialiased selection:bg-emerald-100 selection:text-emerald-900">
         <Providers>
@@ -51,6 +76,7 @@ export default function RootLayout({
                 <div>First Customer: <span className="font-medium text-emerald-700">SriRama Fertilizers</span></div>
               </div>
             </footer>
+            <PWAInstaller />
           </div>
         </Providers>
       </body>

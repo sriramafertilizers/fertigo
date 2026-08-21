@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Rounded Squircle Background matching user image -->
+  <rect x="0" y="0" width="512" height="512" rx="120" ry="120" fill="#059669" />
+  
+  <!-- Soil Line Baseline -->
+  <path d="M 160 360 L 352 360" stroke="#ffffff" stroke-width="28" stroke-linecap="round" fill="none" />
+  
+  <!-- Plant Main Stem -->
+  <path d="M 256 360 L 256 240" stroke="#ffffff" stroke-width="28" stroke-linecap="round" fill="none" />
+  
+  <!-- Left Leaf Loop -->
+  <path d="M 256 280 C 215 280, 165 240, 165 195 C 165 160, 200 150, 228 175 C 245 190, 256 220, 256 245 Z" 
+        stroke="#ffffff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  
+  <!-- Right Leaf Loop -->
+  <path d="M 256 230 C 285 190, 305 130, 345 130 C 370 130, 375 160, 345 195 C 315 225, 275 235, 256 235 Z" 
+        stroke="#ffffff" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+</svg>

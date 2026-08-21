@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { getCurrentUser, getShop, getProducts, getSales, getFarmers, getCategories } from '@/lib/supabase/db';
@@ -28,6 +28,7 @@ import {
   TrendingUp,
   Award,
   Sparkles,
+  Percent,
 } from 'lucide-react';
 
 export default function LandingPage() {
@@ -69,30 +70,51 @@ export default function LandingPage() {
     enabled: Boolean(shop?.id),
   });
 
-  // Calculate Top 3 Selling Products by volume sold
-  const topProducts = React.useMemo(() => {
-    const productMap: Record<string, { name: string; company: string; count: number; revenue: number }> = {};
+  // Variant Cost Map
+  const variantCostMap = useMemo(() => {
+    const map = new Map<string, number>();
+    products.forEach((p) => {
+      (p.variants || []).forEach((v) => {
+        if (v.id) map.set(v.id, Number(v.cost_price || 0));
+        if (v.variant_name) map.set(`${p.name.toLowerCase()}-${v.variant_name.toLowerCase()}`, Number(v.cost_price || 0));
+      });
+    });
+    return map;
+  }, [products]);
+
+  // Calculate Top Selling Products with Revenue & Profit Margins
+  const topProducts = useMemo(() => {
+    const productMap: Record<string, { name: string; variantName: string; count: number; revenue: number; profit: number }> = {};
 
     sales.forEach((s) => {
       (s.items || []).forEach((item) => {
         const key = item.product_name;
+        const costPrice =
+          (item.variant_id ? variantCostMap.get(item.variant_id) : undefined) ??
+          variantCostMap.get(`${item.product_name.toLowerCase()}-${item.variant_name.toLowerCase()}`) ??
+          Number(item.unit_price) * 0.85;
+
+        const itemProfit = (Number(item.unit_price) - Number(costPrice)) * Number(item.quantity || 1);
+
         if (!productMap[key]) {
           productMap[key] = {
             name: item.product_name,
-            company: item.variant_name,
+            variantName: item.variant_name,
             count: 0,
             revenue: 0,
+            profit: 0,
           };
         }
         productMap[key].count += item.quantity;
         productMap[key].revenue += item.total_price;
+        productMap[key].profit += itemProfit;
       });
     });
 
     return Object.values(productMap)
-      .sort((a, b) => b.count - a.count)
+      .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 4);
-  }, [sales]);
+  }, [sales, variantCostMap]);
 
   if (isUserLoading || (currentUser && isShopLoading)) {
     return (
@@ -129,7 +151,7 @@ export default function LandingPage() {
                 {shop.name}
               </h1>
               <p className="text-xs sm:text-sm text-emerald-200 font-medium">
-                Executive Counter & Business Analytics Terminal
+                Executive Revenue, Profit & Counter Analytics Terminal
               </p>
             </div>
           </div>
@@ -154,7 +176,7 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* 1. Scorecard Metrics Grid */}
+        {/* 1. Scorecard Metrics Grid with Gross Profit Scorecard */}
         <DashboardMetrics sales={sales} products={products} />
 
         {/* 2. Main Analytics Suite: Daily Sales Trend Chart + Top Products */}
@@ -168,12 +190,12 @@ export default function LandingPage() {
           {/* Right: Top Moving Products & Category Split (1 column) */}
           <div className="space-y-6">
             
-            {/* Top Selling Products */}
+            {/* Top Selling Products with Revenue & Estimated Margin */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2">
                   <Award className="w-4 h-4 text-emerald-600" />
-                  <h3 className="font-extrabold text-slate-900 text-sm">Top Moving Products</h3>
+                  <h3 className="font-extrabold text-slate-900 text-sm">Top Moving Products & Margins</h3>
                 </div>
                 <Link href="/products" className="text-xs font-bold text-emerald-700 hover:underline">
                   Catalog →
@@ -186,29 +208,34 @@ export default function LandingPage() {
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {topProducts.map((tp, idx) => (
-                    <div
-                      key={tp.name}
-                      className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between text-xs"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 font-extrabold font-mono text-xs flex items-center justify-center shrink-0">
-                          #{idx + 1}
-                        </span>
-                        <div className="min-w-0">
-                          <span className="font-extrabold text-slate-900 block truncate">{tp.name}</span>
-                          <span className="text-[11px] text-slate-500 block truncate">{tp.company}</span>
+                  {topProducts.map((tp, idx) => {
+                    const marginPercent = tp.revenue > 0 ? ((tp.profit / tp.revenue) * 100).toFixed(1) : '0';
+                    return (
+                      <div
+                        key={tp.name}
+                        className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between text-xs"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 font-extrabold font-mono text-xs flex items-center justify-center shrink-0">
+                            #{idx + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <span className="font-extrabold text-slate-900 block truncate">{tp.name}</span>
+                            <span className="text-[11px] text-slate-500 block truncate">{tp.variantName} • {tp.count} sold</span>
+                          </div>
+                        </div>
+
+                        <div className="text-right font-mono shrink-0">
+                          <strong className="text-slate-900 font-extrabold block">
+                            ₹{tp.revenue.toFixed(0)}
+                          </strong>
+                          <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200 inline-block">
+                            +₹{tp.profit.toFixed(0)} ({marginPercent}%)
+                          </span>
                         </div>
                       </div>
-
-                      <div className="text-right font-mono shrink-0">
-                        <strong className="text-emerald-800 font-extrabold block">
-                          ₹{tp.revenue.toFixed(0)}
-                        </strong>
-                        <span className="text-[10px] text-slate-500 font-bold">{tp.count} units sold</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
