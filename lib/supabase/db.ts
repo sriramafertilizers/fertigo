@@ -911,6 +911,97 @@ export async function getSales(shopId: string): Promise<SaleWithItems[]> {
   }));
 }
 
+export async function deleteSale(saleId: string): Promise<void> {
+  if (!saleId) return;
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data: sale } = await supabase
+        .from('sales')
+        .select('*, items:sale_items(*)')
+        .eq('id', saleId)
+        .single();
+
+      if (sale) {
+        // Restore inventory stock
+        for (const item of (sale.items || [])) {
+          if (item.variant_id) {
+            const { data: variant } = await supabase
+              .from('product_variants')
+              .select('stock_quantity')
+              .eq('id', item.variant_id)
+              .single();
+
+            if (variant) {
+              await supabase
+                .from('product_variants')
+                .update({ stock_quantity: Number(variant.stock_quantity || 0) + Number(item.quantity || 1) })
+                .eq('id', item.variant_id);
+            }
+          }
+        }
+
+        // Adjust farmer Katha credit balance
+        if (sale.payment_mode === 'CREDIT' && sale.farmer_id) {
+          const { data: farmer } = await supabase
+            .from('farmers')
+            .select('katha_balance')
+            .eq('id', sale.farmer_id)
+            .single();
+
+          if (farmer) {
+            await supabase
+              .from('farmers')
+              .update({ katha_balance: Math.max(0, Number(farmer.katha_balance || 0) - Number(sale.net_amount || 0)) })
+              .eq('id', sale.farmer_id);
+          }
+        }
+
+        // Delete items and sale record
+        await supabase.from('sale_items').delete().eq('sale_id', saleId);
+        await supabase.from('sales').delete().eq('id', saleId);
+        return;
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  // Local Store Fallback
+  const sales = getLocalStore<Sale[]>('sales', []);
+  const saleToDelete = sales.find((s) => s.id === saleId);
+  const updatedSales = sales.filter((s) => s.id !== saleId);
+  setLocalStore('sales', updatedSales);
+
+  const saleItems = getLocalStore<SaleItem[]>('sale_items', []);
+  const deletedItems = saleItems.filter((i) => i.sale_id === saleId);
+  const updatedItems = saleItems.filter((i) => i.sale_id !== saleId);
+  setLocalStore('sale_items', updatedItems);
+
+  if (saleToDelete) {
+    const prods = getLocalStore<ProductWithVariants[]>('products', []);
+    deletedItems.forEach((item) => {
+      prods.forEach((p) => {
+        (p.variants || []).forEach((v) => {
+          if (v.id === item.variant_id || (v.variant_name === item.variant_name && p.name === item.product_name)) {
+            v.stock_quantity = Number(v.stock_quantity || 0) + item.quantity;
+          }
+        });
+      });
+    });
+    setLocalStore('products', prods);
+
+    if (saleToDelete.payment_mode === 'CREDIT' && saleToDelete.farmer_id) {
+      const farmers = getLocalStore<Farmer[]>('farmers', []);
+      const fi = farmers.findIndex((f) => f.id === saleToDelete.farmer_id);
+      if (fi >= 0) {
+        farmers[fi].katha_balance = Math.max(0, Number(farmers[fi].katha_balance || 0) - Number(saleToDelete.net_amount || 0));
+        setLocalStore('farmers', farmers);
+      }
+    }
+  }
+}
+
 // ----------------------------------------------------
 // FARMERS / CUSTOMER REGISTRY API
 // ----------------------------------------------------

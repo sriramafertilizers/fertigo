@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { getShop, getSales } from '@/lib/supabase/db';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getShop, getSales, deleteSale } from '@/lib/supabase/db';
 import { SaleWithItems } from '@/lib/types';
 import { DashRing } from '@/components/loading-ui/dash-ring';
 import SaleSuccessModal from '@/components/sale-success-modal';
@@ -19,13 +19,17 @@ import {
   IndianRupee,
   Eye,
   XCircle,
-  ChevronRight,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function SalesHistoryPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSale, setSelectedSale] = useState<SaleWithItems | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [saleToDelete, setSaleToDelete] = useState<SaleWithItems | null>(null);
+
+  const queryClient = useQueryClient();
 
   const { data: shop } = useQuery({
     queryKey: ['shop'],
@@ -36,6 +40,16 @@ export default function SalesHistoryPage() {
     queryKey: ['sales', shop?.id],
     queryFn: () => (shop?.id ? getSales(shop.id) : Promise.resolve([])),
     enabled: Boolean(shop?.id),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (saleId: string) => deleteSale(saleId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['farmers'] });
+      setSaleToDelete(null);
+    },
   });
 
   const filteredSales = sales.filter((s) => {
@@ -59,10 +73,10 @@ export default function SalesHistoryPage() {
             <span>Sales & Invoice History</span>
           </div>
           <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-slate-900 mt-1 truncate">
-            Sales Register
+            Sales Register & Invoices
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5 hidden sm:block truncate">
-            View past farmer bills, item breakdown, payment modes, and sales volume
+            Manage farmer bills, view payment mode distributions, and delete erroneous sales
           </p>
         </div>
 
@@ -211,22 +225,32 @@ export default function SalesHistoryPage() {
                     )}
                   </div>
 
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
                     <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5 text-slate-400" />
                       {formattedDate}
                     </span>
 
-                    <button
-                      onClick={() => {
-                        setSelectedSale(sale);
-                        setIsModalOpen(true);
-                      }}
-                      className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-100 hover:bg-emerald-600 hover:text-white border border-slate-300 text-xs font-bold text-slate-800 transition-colors cursor-pointer touch-target"
-                    >
-                      <Eye className="w-4 h-4" />
-                      <span>View Invoice</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedSale(sale);
+                          setIsModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-100 hover:bg-emerald-600 hover:text-white border border-slate-300 text-xs font-bold text-slate-800 transition-colors cursor-pointer touch-target"
+                      >
+                        <Eye className="w-4 h-4" />
+                        <span>View</span>
+                      </button>
+
+                      <button
+                        onClick={() => setSaleToDelete(sale)}
+                        className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 transition-colors cursor-pointer touch-target"
+                        title="Delete Sale Invoice"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-600" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -243,7 +267,7 @@ export default function SalesHistoryPage() {
                   <th className="py-3.5 px-4 w-1/3">Items Purchased</th>
                   <th className="py-3.5 px-4 text-right w-32">Net Amount</th>
                   <th className="py-3.5 px-4 text-center w-28">Mode</th>
-                  <th className="py-3.5 px-4 text-center w-28">Action</th>
+                  <th className="py-3.5 px-4 text-center w-36">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -301,16 +325,26 @@ export default function SalesHistoryPage() {
                       </td>
 
                       <td className="py-3.5 px-4 text-center">
-                        <button
-                          onClick={() => {
-                            setSelectedSale(sale);
-                            setIsModalOpen(true);
-                          }}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-600 hover:text-white border border-slate-300 text-xs font-bold text-slate-800 transition-colors cursor-pointer touch-target"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>View</span>
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setSelectedSale(sale);
+                              setIsModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-emerald-600 hover:text-white border border-slate-300 text-xs font-bold text-slate-800 transition-colors cursor-pointer touch-target"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View</span>
+                          </button>
+
+                          <button
+                            onClick={() => setSaleToDelete(sale)}
+                            className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 transition-colors cursor-pointer touch-target"
+                            title="Delete Invoice"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -321,11 +355,70 @@ export default function SalesHistoryPage() {
         </>
       )}
 
+      {/* Sale Detail View Modal */}
       <SaleSuccessModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         sale={selectedSale}
+        onDelete={(saleId) => {
+          const sale = sales.find((s) => s.id === saleId);
+          if (sale) setSaleToDelete(sale);
+        }}
       />
+
+      {/* Delete Invoice Confirmation Modal */}
+      {saleToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl p-6 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-700 flex items-center justify-center mx-auto font-bold">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="text-lg font-extrabold text-slate-900">Delete Sales Invoice?</h3>
+              <p className="text-xs text-slate-500 font-medium">
+                You are about to delete bill <strong className="text-slate-900 font-mono">{saleToDelete.bill_number}</strong> for{' '}
+                <strong className="text-slate-900">{saleToDelete.customer_name}</strong> (₹{Number(saleToDelete.net_amount).toFixed(2)}).
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
+              <span className="font-bold block">⚠️ Automatic Ledger Adjustments:</span>
+              <ul className="list-disc list-inside space-y-0.5 text-[11px] text-amber-800">
+                <li>Restores item quantity back to product inventory stock</li>
+                {saleToDelete.payment_mode === 'CREDIT' && <li>Deducts ₹{Number(saleToDelete.net_amount).toFixed(2)} from farmer Katha credit balance</li>}
+                <li>Permanently removes invoice from sales history</li>
+              </ul>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setSaleToDelete(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 font-extrabold text-slate-700 text-xs transition-colors cursor-pointer touch-target"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                disabled={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(saleToDelete.id)}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs shadow-md transition-all cursor-pointer touch-target flex items-center justify-center gap-1.5"
+              >
+                {deleteMutation.isPending ? (
+                  <DashRing size={16} />
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete Invoice</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
