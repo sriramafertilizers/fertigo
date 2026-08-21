@@ -36,14 +36,14 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-screen bg-slate-50 text-slate-900 font-sans antialiased selection:bg-emerald-100 selection:text-emerald-900">
+      <body className="min-h-dvh w-full max-w-full overflow-x-hidden bg-slate-50 text-slate-900 font-sans antialiased selection:bg-emerald-100 selection:text-emerald-900">
         <Providers>
-          <div className="flex flex-col min-h-screen">
+          <div className="flex flex-col min-h-dvh w-full max-w-full overflow-x-hidden">
             <Navbar />
-            <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+            <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
               {children}
             </main>
-            <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">
+            <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500 w-full">
               <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-2">
                 <div>
                   <span className="font-semibold text-slate-700">Fertigo</span> — The simple ERP for agri shops
