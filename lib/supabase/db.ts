@@ -326,6 +326,32 @@ export async function getCompanies(shopId: string): Promise<Company[]> {
   return companies.filter((c) => c.shop_id === shopId);
 }
 
+export async function getCompanyById(companyId: string): Promise<Company | null> {
+  if (!companyId) return null;
+  const decodedId = decodeURIComponent(companyId);
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*')
+        .or(`id.eq.${decodedId},name.ilike.${decodedId}`)
+        .maybeSingle();
+      if (!error && data) return data;
+    } catch {
+      // fallback
+    }
+  }
+
+  const companies = getLocalStore<Company[]>('companies', []);
+  const found = companies.find(
+    (c) => c.id === decodedId || c.id === companyId || c.name.toLowerCase() === decodedId.toLowerCase()
+  );
+  if (found) return found;
+
+  return null;
+}
+
 export async function createCompany(
   shopId: string,
   companyData: Omit<Company, 'id' | 'shop_id' | 'created_at'>

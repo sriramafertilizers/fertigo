@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { getCurrentUser, getShop, getProducts, getSales, getFarmers, getCategories } from '@/lib/supabase/db';
@@ -32,8 +32,13 @@ import {
 } from 'lucide-react';
 
 export default function LandingPage() {
+  const [mounted, setMounted] = useState(false);
   const [selectedSale, setSelectedSale] = useState<SaleWithItems | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const { data: currentUser, isLoading: isUserLoading } = useQuery({
     queryKey: ['currentUser'],
@@ -116,7 +121,7 @@ export default function LandingPage() {
       .slice(0, 4);
   }, [sales, variantCostMap]);
 
-  if (isUserLoading || (currentUser && isShopLoading)) {
+  if (!mounted || isUserLoading || (currentUser && isShopLoading)) {
     return (
       <div className="bg-white p-16 rounded-2xl border border-slate-200 text-center flex flex-col items-center justify-center gap-3 max-w-4xl mx-auto font-bold text-slate-700">
         <DashRing size={36} />

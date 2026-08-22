@@ -1,14 +1,25 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Download, Smartphone, X, CheckCircle2 } from 'lucide-react';
+import { usePathname } from 'next/navigation';
+import { Download, Smartphone, X } from 'lucide-react';
 
 export default function PWAInstaller() {
+  const pathname = usePathname();
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [isDismissed, setIsDismissed] = useState(false);
 
   useEffect(() => {
+    // Check if user previously dismissed PWA install prompt
+    if (typeof window !== 'undefined') {
+      const dismissed = localStorage.getItem('fertigo_pwa_dismissed');
+      if (dismissed === 'true') {
+        setIsDismissed(true);
+      }
+    }
+
     // Register Service Worker
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -37,6 +48,9 @@ export default function PWAInstaller() {
       setIsInstalled(true);
       setShowInstallBanner(false);
       setDeferredPrompt(null);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('fertigo_pwa_dismissed', 'true');
+      }
       console.log('[PWA] Fertigo App installed on home screen');
     });
 
@@ -45,17 +59,31 @@ export default function PWAInstaller() {
     };
   }, []);
 
+  const handleDismiss = () => {
+    setShowInstallBanner(false);
+    setIsDismissed(true);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('fertigo_pwa_dismissed', 'true');
+    }
+  };
+
   const handleInstallClick = async () => {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     if (outcome === 'accepted') {
       setShowInstallBanner(false);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('fertigo_pwa_dismissed', 'true');
+      }
     }
     setDeferredPrompt(null);
   };
 
-  if (!showInstallBanner || isInstalled) return null;
+  // Strictly only show on the main Landing Page ('/') AND if not dismissed & not installed
+  if (pathname !== '/' || !showInstallBanner || isInstalled || isDismissed) {
+    return null;
+  }
 
   return (
     <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 z-50 max-w-md w-full bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border border-slate-800 flex items-center justify-between gap-3 animate-slideUp">
@@ -88,7 +116,7 @@ export default function PWAInstaller() {
 
         <button
           type="button"
-          onClick={() => setShowInstallBanner(false)}
+          onClick={handleDismiss}
           className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer touch-target"
           aria-label="Dismiss banner"
         >
