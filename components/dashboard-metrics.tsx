@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { SaleWithItems, ProductWithVariants } from '@/lib/types';
 import { getExpiryStatus } from '@/lib/utils';
@@ -17,6 +17,8 @@ import {
   Wallet,
   Percent,
   Sparkles,
+  Calendar,
+  Filter,
 } from 'lucide-react';
 
 interface DashboardMetricsProps {
@@ -24,15 +26,13 @@ interface DashboardMetricsProps {
   products: ProductWithVariants[];
 }
 
-export default function DashboardMetrics({ sales, products }: DashboardMetricsProps) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+type TimeframeOption = 'today' | 'week' | 'month' | 'all';
 
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
+export default function DashboardMetrics({ sales, products }: DashboardMetricsProps) {
+  const [timeframe, setTimeframe] = useState<TimeframeOption>('today');
 
   // Variant Cost Price Lookup Map for exact profit calculation
-  const variantCostMap = React.useMemo(() => {
+  const variantCostMap = useMemo(() => {
     const map = new Map<string, number>();
     products.forEach((p) => {
       (p.variants || []).forEach((v) => {
@@ -43,80 +43,207 @@ export default function DashboardMetrics({ sales, products }: DashboardMetricsPr
     return map;
   }, [products]);
 
-  // Calculate Today's Metrics & Gross Profit
-  let todaySalesTotal = 0;
-  let todayGrossProfit = 0;
-  let todayCashTotal = 0;
-  let todayUpiTotal = 0;
-  let todayCreditTotal = 0;
-  let todayBillCount = 0;
+  // Compute date boundaries
+  const dateRanges = useMemo(() => {
+    const now = new Date();
+    
+    // Today 00:00:00
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
 
-  let yesterdaySalesTotal = 0;
+    // Yesterday 00:00:00
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
 
-  sales.forEach((s) => {
-    if (!s.created_at) return;
-    const sDate = new Date(s.created_at);
+    // Start of Week (Sunday/Monday)
+    const weekStart = new Date(todayStart);
+    const dayOfWeek = weekStart.getDay();
+    weekStart.setDate(weekStart.getDate() - dayOfWeek);
 
-    if (sDate >= today) {
+    // Previous Week Start
+    const prevWeekStart = new Date(weekStart);
+    prevWeekStart.setDate(prevWeekStart.getDate() - 7);
+
+    // Start of Month
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    // Previous Month Start
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    return {
+      todayStart,
+      yesterdayStart,
+      weekStart,
+      prevWeekStart,
+      monthStart,
+      prevMonthStart,
+    };
+  }, []);
+
+  // Filter Sales & Calculate Financial Metrics based on Selected Timeframe
+  const metrics = useMemo(() => {
+    let salesTotal = 0;
+    let grossProfit = 0;
+    let cashTotal = 0;
+    let upiTotal = 0;
+    let creditTotal = 0;
+    let billCount = 0;
+
+    let prevPeriodSalesTotal = 0;
+
+    sales.forEach((s) => {
+      if (!s.created_at) return;
+      const sDate = new Date(s.created_at);
       const net = Number(s.net_amount || 0);
-      todaySalesTotal += net;
-      todayBillCount += 1;
 
-      if (s.payment_mode === 'CASH') todayCashTotal += net;
-      else if (s.payment_mode === 'UPI') todayUpiTotal += net;
-      else if (s.payment_mode === 'CREDIT') todayCreditTotal += net;
+      let isCurrentPeriod = false;
+      let isPrevPeriod = false;
 
-      // Calculate Gross Profit for today's bill items
-      (s.items || []).forEach((item) => {
-        const costPrice =
-          (item.variant_id ? variantCostMap.get(item.variant_id) : undefined) ??
-          variantCostMap.get(`${item.product_name.toLowerCase()}-${item.variant_name.toLowerCase()}`) ??
-          Number(item.unit_price) * 0.85;
+      if (timeframe === 'today') {
+        isCurrentPeriod = sDate >= dateRanges.todayStart;
+        isPrevPeriod = sDate >= dateRanges.yesterdayStart && sDate < dateRanges.todayStart;
+      } else if (timeframe === 'week') {
+        isCurrentPeriod = sDate >= dateRanges.weekStart;
+        isPrevPeriod = sDate >= dateRanges.prevWeekStart && sDate < dateRanges.weekStart;
+      } else if (timeframe === 'month') {
+        isCurrentPeriod = sDate >= dateRanges.monthStart;
+        isPrevPeriod = sDate >= dateRanges.prevMonthStart && sDate < dateRanges.monthStart;
+      } else if (timeframe === 'all') {
+        isCurrentPeriod = true;
+      }
 
-        const itemProfit = (Number(item.unit_price) - Number(costPrice)) * Number(item.quantity || 1);
-        todayGrossProfit += itemProfit;
-      });
-    } else if (sDate >= yesterday && sDate < today) {
-      yesterdaySalesTotal += Number(s.net_amount || 0);
-    }
-  });
+      if (isCurrentPeriod) {
+        salesTotal += net;
+        billCount += 1;
 
-  const liquidCollections = todayCashTotal + todayUpiTotal;
-  const avgMarginPercent = todaySalesTotal > 0 ? ((todayGrossProfit / todaySalesTotal) * 100).toFixed(1) : '0.0';
+        if (s.payment_mode === 'CASH') cashTotal += net;
+        else if (s.payment_mode === 'UPI') upiTotal += net;
+        else if (s.payment_mode === 'CREDIT') creditTotal += net;
 
-  // % change vs yesterday
-  let percentageChange = 0;
-  if (yesterdaySalesTotal > 0) {
-    percentageChange = Math.round(((todaySalesTotal - yesterdaySalesTotal) / yesterdaySalesTotal) * 100);
-  } else if (todaySalesTotal > 0) {
-    percentageChange = 100;
-  }
+        // Calculate Gross Profit for items in this bill
+        (s.items || []).forEach((item) => {
+          const costPrice =
+            (item.variant_id ? variantCostMap.get(item.variant_id) : undefined) ??
+            variantCostMap.get(`${item.product_name.toLowerCase()}-${item.variant_name.toLowerCase()}`) ??
+            Number(item.unit_price) * 0.85;
 
-  // Inventory Stock & Expiry Health Metrics
-  let lowStockCount = 0;
-  let expiringSoonCount = 0;
-
-  products.forEach((p) => {
-    (p.variants || []).forEach((v) => {
-      if (Number(v.stock_quantity || 0) <= 10) lowStockCount += 1;
-
-      const exp = getExpiryStatus(v.expiry_date);
-      if (exp.status === 'EXPIRED' || exp.status === 'CRITICAL' || exp.status === 'WARNING') {
-        expiringSoonCount += 1;
+          const itemProfit = (Number(item.unit_price) - Number(costPrice)) * Number(item.quantity || 1);
+          grossProfit += itemProfit;
+        });
+      } else if (isPrevPeriod) {
+        prevPeriodSalesTotal += net;
       }
     });
-  });
+
+    const liquidCollections = cashTotal + upiTotal;
+    const avgMarginPercent = salesTotal > 0 ? ((grossProfit / salesTotal) * 100).toFixed(1) : '0.0';
+
+    // % change calculation vs prior timeframe
+    let percentageChange = 0;
+    if (prevPeriodSalesTotal > 0) {
+      percentageChange = Math.round(((salesTotal - prevPeriodSalesTotal) / prevPeriodSalesTotal) * 100);
+    } else if (salesTotal > 0) {
+      percentageChange = 100;
+    }
+
+    return {
+      salesTotal,
+      grossProfit,
+      cashTotal,
+      upiTotal,
+      creditTotal,
+      billCount,
+      liquidCollections,
+      avgMarginPercent,
+      percentageChange,
+    };
+  }, [sales, timeframe, dateRanges, variantCostMap]);
+
+  // Inventory Stock & Expiry Health Metrics
+  const { lowStockCount, expiringSoonCount } = useMemo(() => {
+    let lowCount = 0;
+    let expCount = 0;
+
+    products.forEach((p) => {
+      (p.variants || []).forEach((v) => {
+        if (Number(v.stock_quantity || 0) <= 10) lowCount += 1;
+
+        const exp = getExpiryStatus(v.expiry_date);
+        if (exp.status === 'EXPIRED' || exp.status === 'CRITICAL' || exp.status === 'WARNING') {
+          expCount += 1;
+        }
+      });
+    });
+
+    return { lowStockCount: lowCount, expiringSoonCount: expCount };
+  }, [products]);
+
+  const timeframeLabels: Record<TimeframeOption, string> = {
+    today: "Today's Collections",
+    week: 'This Week',
+    month: 'This Month',
+    all: 'All Time',
+  };
+
+  const periodSubtext: Record<TimeframeOption, string> = {
+    today: 'vs yesterday',
+    week: 'vs last week',
+    month: 'vs last month',
+    all: 'total store sales',
+  };
 
   return (
-    <div className="w-full max-w-full">
+    <div className="w-full max-w-full space-y-3 sm:space-y-4">
+      {/* Timeframe Selection Filter Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+            <Calendar className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="font-extrabold text-sm text-slate-900 leading-tight">
+              Collections & Revenue Window
+            </h3>
+            <span className="text-[11px] text-slate-500 font-medium block">
+              Viewing <strong className="text-emerald-800 font-extrabold">{timeframeLabels[timeframe]}</strong> summary
+            </span>
+          </div>
+        </div>
+
+        {/* Filter Pills */}
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 self-start sm:self-auto">
+          {(
+            [
+              { id: 'today', label: 'Today' },
+              { id: 'week', label: 'This Week' },
+              { id: 'month', label: 'This Month' },
+              { id: 'all', label: 'All Time' },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setTimeframe(item.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all touch-target cursor-pointer ${
+                timeframe === item.id
+                  ? 'bg-emerald-600 text-white shadow-xs font-extrabold'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Executive Metric Scorecards (5 Cards Layout) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         
-        {/* Metric 1: Today's Total Sales Revenue */}
+        {/* Metric 1: Total Sales Revenue */}
         <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-emerald-300 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-              Today&apos;s Revenue
+              {timeframeLabels[timeframe]}
             </span>
             <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
               <IndianRupee className="w-5 h-5 text-emerald-700" />
@@ -125,25 +252,27 @@ export default function DashboardMetrics({ sales, products }: DashboardMetricsPr
 
           <div>
             <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-mono tabular-nums">
-              ₹{todaySalesTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{metrics.salesTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </div>
             <div className="flex items-center gap-1.5 mt-1 text-xs">
-              {percentageChange >= 0 ? (
-                <span className="inline-flex items-center gap-1 font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                  <TrendingUp className="w-3.5 h-3.5" />
-                  <span>+{percentageChange}% vs yesterday</span>
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 font-extrabold text-red-700 bg-red-50 px-2 py-0.5 rounded-md border border-red-200">
-                  <TrendingDown className="w-3.5 h-3.5" />
-                  <span>{percentageChange}% vs yesterday</span>
-                </span>
+              {timeframe !== 'all' && (
+                metrics.percentageChange >= 0 ? (
+                  <span className="inline-flex items-center gap-1 font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    <TrendingUp className="w-3.5 h-3.5" />
+                    <span>+{metrics.percentageChange}% {periodSubtext[timeframe]}</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 font-extrabold text-red-700 bg-red-50 px-2 py-0.5 rounded-md border border-red-200">
+                    <TrendingDown className="w-3.5 h-3.5" />
+                    <span>{metrics.percentageChange}% {periodSubtext[timeframe]}</span>
+                  </span>
+                )
               )}
             </div>
           </div>
 
           <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium flex justify-between">
-            <span>{todayBillCount} bills generated</span>
+            <span>{metrics.billCount} bills processed</span>
             <Link href="/sales" className="text-emerald-700 font-bold hover:underline">
               Register →
             </Link>
@@ -164,12 +293,12 @@ export default function DashboardMetrics({ sales, products }: DashboardMetricsPr
 
           <div>
             <div className="text-2xl sm:text-3xl font-extrabold text-emerald-900 font-mono tabular-nums">
-              ₹{todayGrossProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{metrics.grossProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </div>
             <div className="mt-1 text-xs font-extrabold text-emerald-700 flex items-center gap-1">
               <span>Avg Margin:</span>
               <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-mono border border-emerald-300">
-                {avgMarginPercent}%
+                {metrics.avgMarginPercent}%
               </span>
             </div>
           </div>
@@ -192,19 +321,19 @@ export default function DashboardMetrics({ sales, products }: DashboardMetricsPr
 
           <div>
             <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-mono tabular-nums">
-              ₹{liquidCollections.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{metrics.liquidCollections.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </div>
-            <p className="text-xs font-semibold text-slate-500 mt-1">
-              Cash: <strong className="text-slate-800">₹{todayCashTotal.toFixed(0)}</strong> | UPI: <strong className="text-slate-800">₹{todayUpiTotal.toFixed(0)}</strong>
+            <p className="text-xs font-semibold text-slate-500 mt-1 truncate">
+              Cash: <strong className="text-slate-800">₹{metrics.cashTotal.toFixed(0)}</strong> | UPI: <strong className="text-slate-800">₹{metrics.upiTotal.toFixed(0)}</strong>
             </p>
           </div>
 
           <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-medium">
-            Liquid cash in counter
+            Liquid cash collected
           </div>
         </div>
 
-        {/* Metric 4: Katha Credit Issued Today */}
+        {/* Metric 4: Katha Credit Issued */}
         <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between space-y-3 relative overflow-hidden group hover:border-amber-300 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
@@ -217,10 +346,10 @@ export default function DashboardMetrics({ sales, products }: DashboardMetricsPr
 
           <div>
             <div className="text-2xl sm:text-3xl font-extrabold text-amber-800 font-mono tabular-nums">
-              ₹{todayCreditTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{metrics.creditTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </div>
-            <p className="text-xs font-bold text-amber-700 mt-1">
-              {todayCreditTotal > 0 ? '⚠️ Farmer credit added today' : 'No credit issued today'}
+            <p className="text-xs font-bold text-amber-700 mt-1 truncate">
+              {metrics.creditTotal > 0 ? '⚠️ Credit issued in period' : 'No credit in period'}
             </p>
           </div>
 
